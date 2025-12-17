@@ -20,6 +20,7 @@
 * Configuration option
   * Code
   * yaml or properties (TO-DO)
+  * filtering with tag or namespace (TO-DO)
 
 ## Install
 ### Gradle Project
