@@ -2,111 +2,22 @@ import org.jreleaser.model.Active
 import org.jreleaser.model.Signing
 
 plugins {
-    kotlin("multiplatform") version "2.0.21"
-    id("org.jetbrains.dokka") version "1.9.20"
-    id("maven-publish")
-    id("org.jreleaser") version "1.18.0"
+    id("convention.kotlin-multiplatform")
+    id("convention.publish")
+
+    alias(libs.plugins.jreleaser)
 }
 
 allprojects {
-    apply {
-        plugin("maven-publish")
-    }
-
     group = "kr.jadekim"
-    version = "2.1.3"
-
-    repositories {
-        mavenCentral()
-    }
-
-    publishing {
-        repositories {
-            maven {
-                setUrl(layout.buildDirectory.dir("staging-deploy"))
-            }
-        }
-    }
+    version = "2.2.0-beta1"
 }
 
 kotlin {
-    jvmToolchain(8)
-
-    jvm {
-        testRuns["test"].executionTask.configure {
-            useJUnitPlatform()
-        }
-
-        withJava()
-    }
-//    js(LEGACY) {
-//        browser()
-//        nodejs()
-//    }
-
     sourceSets {
-        val commonMain by getting {
-            dependencies {
-                val kotlinxDatetimeVersion: String by project
-
-                implementation("org.jetbrains.kotlinx:kotlinx-datetime:$kotlinxDatetimeVersion")
-
-                implementation("co.touchlab:stately-concurrency:2.1.0")
-                implementation("co.touchlab:stately-collections:2.1.0")
-            }
-        }
-        val commonTest by getting {
-            dependencies {
-                implementation(kotlin("test"))
-            }
-        }
-        val jvmMain by getting
-        val jvmTest by getting {
-            dependencies {
-                val junitVersion: String by project
-
-                implementation(kotlin("test-junit5"))
-                runtimeOnly("org.junit.jupiter:junit-jupiter-engine:$junitVersion")
-                compileOnly("org.junit.jupiter:junit-jupiter-api:$junitVersion")
-                compileOnly("org.junit.jupiter:junit-jupiter-params:$junitVersion")
-            }
-        }
-//        val jsMain by getting
-//        val jsTest by getting
-    }
-
-    val dokkaHtml by tasks.getting(org.jetbrains.dokka.gradle.DokkaTask::class)
-    val javadocJar: TaskProvider<Jar> by tasks.registering(Jar::class) {
-        dependsOn(dokkaHtml)
-        archiveClassifier.set("javadoc")
-        from(dokkaHtml.outputDirectory)
-    }
-
-    publishing {
-        publications.withType<MavenPublication> {
-            artifact(javadocJar)
-            pom {
-                name.set(project.name)
-                description.set("Logging Library for Kotlin")
-                url.set("https://github.com/jdekim43/j-logger")
-                licenses {
-                    license {
-                        name.set("The Apache License, Version 2.0")
-                        url.set("http://www.apache.org/licenses/LICENSE-2.0.txt")
-                    }
-                }
-                developers {
-                    developer {
-                        id.set("jdekim43")
-                        name.set("Jade Kim")
-                    }
-                }
-                scm {
-                    connection.set("scm:git:git://github.com/jdekim43/j-logger.git")
-                    developerConnection.set("scm:git:git://github.com/jdekim43/j-logger.git")
-                    url.set("https://github.com/jdekim43/j-logger")
-                }
-            }
+        commonMain.dependencies {
+            implementation(libs.stately.concurrency)
+            implementation(libs.stately.collections)
         }
     }
 }
@@ -134,8 +45,18 @@ jreleaser {
                     active.set(Active.RELEASE)
                     url.set("https://central.sonatype.com/api/v1/publisher")
 
-                    subprojects.forEach {
+                    listOf(rootProject).forEach {
                         stagingRepository(it.layout.buildDirectory.dir("staging-deploy").get().asFile.absolutePath)
+
+                        listOf("iosarm64", "iossimulatorarm64", "js").forEach { target ->
+                            artifactOverride {
+                                artifactId = "${it.name}-$target"
+                                jar = false
+                                verifyPom = false
+                                sourceJar = false
+                                javadocJar = false
+                            }
+                        }
                     }
                 }
             }
@@ -149,8 +70,18 @@ jreleaser {
                     closeRepository.set(true)
                     releaseRepository.set(true)
 
-                    subprojects.forEach {
+                    listOf(rootProject).forEach {
                         stagingRepository(it.layout.buildDirectory.dir("staging-deploy").get().asFile.absolutePath)
+
+                        listOf("iosarm64", "iossimulatorarm64", "js").forEach { target ->
+                            artifactOverride {
+                                artifactId = "${it.name}-$target"
+                                jar = false
+                                verifyPom = false
+                                sourceJar = false
+                                javadocJar = false
+                            }
+                        }
                     }
                 }
             }
@@ -164,9 +95,21 @@ jreleaser {
     }
 }
 
-tasks.named("publish") {
+val clearStagingDirectory = tasks.create<Delete>("clearStagingDirectory") {
+    delete(layout.buildDirectory.dir("staging-deploy"))
+
     subprojects.forEach {
-        dependsOn("${it.name}:publish")
+        delete(it.layout.buildDirectory.dir("staging-deploy"))
+    }
+}
+
+
+tasks.named("publish") {
+    dependsOn(clearStagingDirectory)
+    subprojects.forEach {
+        val publishTask = it.tasks.named("publish")
+        publishTask.configure { dependsOn(clearStagingDirectory) }
+        dependsOn(publishTask)
     }
 
     finalizedBy(":jreleaserFullRelease")

@@ -1,11 +1,9 @@
 package kr.jadekim.logger
 
-import kotlinx.datetime.Clock
-import kotlinx.datetime.LocalDateTime
-import kotlinx.datetime.TimeZone
-import kotlinx.datetime.toLocalDateTime
 import kr.jadekim.logger.context.EmptyLogContext
 import kr.jadekim.logger.context.LogContext
+import kotlin.time.Clock
+import kotlin.time.Instant
 
 interface Log {
     val loggerName: String
@@ -15,7 +13,7 @@ interface Log {
     val meta: Map<String, Any?>
     val context: LogContext
     val threadName: String?
-    val timestamp: LocalDateTime
+    val timestamp: Instant
 
     fun isPrintable(level: LogLevel) = this.level.isPrintableAt(level)
 }
@@ -28,15 +26,14 @@ data class LogData(
     override val meta: Map<String, Any?> = emptyMap(),
     override val context: LogContext = EmptyLogContext,
     override val threadName: String? = getThreadName(),
-    override val timestamp: LocalDateTime = Clock.System.now().toLocalDateTime(TimeZone.currentSystemDefault()),
+    override val timestamp: Instant = Clock.System.now(),
 ) : Log
 
-sealed class SerializedLog<T>(log: Log, val data: T) : Log by log {
+abstract class SerializedLog<T>(log: Log, val data: T) : Log by log {
 
-    class String(log: Log, data: kotlin.String) : SerializedLog<kotlin.String>(log, data)
+    class LogString(log: Log, data: String) : SerializedLog<String>(log, data)
 
-    @Suppress("unused")
-    class ByteArray(log: Log, data: kotlin.ByteArray) : SerializedLog<kotlin.ByteArray>(log, data)
+    class LogByteArray(log: Log, data: ByteArray) : SerializedLog<ByteArray>(log, data)
 }
 
 internal expect fun getThreadName(): String?

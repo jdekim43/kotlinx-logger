@@ -1,5 +1,3 @@
-@file:Suppress("unused")
-
 package kr.jadekim.logger.coroutine
 
 import kotlinx.coroutines.withContext

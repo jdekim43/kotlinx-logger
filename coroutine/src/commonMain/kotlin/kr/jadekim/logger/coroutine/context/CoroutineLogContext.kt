@@ -1,10 +1,11 @@
 package kr.jadekim.logger.coroutine.context
 
+import kotlinx.coroutines.currentCoroutineContext
 import kr.jadekim.logger.context.MutableLogContext
 import kr.jadekim.logger.context.ThreadLogContext
 import kotlin.coroutines.AbstractCoroutineContextElement
 import kotlin.coroutines.CoroutineContext
-import kotlin.coroutines.coroutineContext
+import kotlin.jvm.JvmStatic
 
 class CoroutineLogContext(
     data: MutableLogContext = MutableLogContext(),
@@ -15,7 +16,8 @@ class CoroutineLogContext(
     companion object Key : CoroutineContext.Key<CoroutineLogContext> {
 
         @JvmStatic
-        suspend fun get(): CoroutineLogContext =
-            coroutineContext[CoroutineLogContext] ?: CoroutineLogContext(ThreadLogContext)
+        suspend fun get(coroutineContext: CoroutineContext? = null): CoroutineLogContext =
+            (coroutineContext ?: currentCoroutineContext())[CoroutineLogContext]
+                ?: CoroutineLogContext(ThreadLogContext.clone())
     }
 }

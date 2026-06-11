@@ -1,8 +1,5 @@
 package kr.jadekim.logger.integration.okhttp
 
-import kotlinx.datetime.Clock
-import kotlinx.datetime.TimeZone
-import kotlinx.datetime.toLocalDateTime
 import kr.jadekim.logger.JLog
 import kr.jadekim.logger.JLogger
 import kr.jadekim.logger.LogLevel
@@ -19,6 +16,7 @@ import okio.GzipSource
 import java.io.EOFException
 import java.nio.charset.Charset
 import java.nio.charset.StandardCharsets
+import kotlin.time.Clock
 
 class OkHttpLogger(
     val clientName: String,
@@ -62,7 +60,7 @@ class OkHttpLogger(
             }
         }
 
-        val requestTimestamp = Clock.System.now().toLocalDateTime(TimeZone.UTC)
+        val requestTimestamp = Clock.System.now()
         val requestLog = HttpRequestLog(
             connection?.protocol()?.name ?: "",
             request.method,
@@ -93,7 +91,7 @@ class OkHttpLogger(
             throw e
         }
 
-        val responseTimestamp = Clock.System.now().toLocalDateTime(TimeZone.UTC)
+        val responseTimestamp = Clock.System.now()
         val responseHeaders = if (option.includeResponseHeaders) response.headers.toMap() else emptyMap()
         val okHttpResponseBody = response.body
         val responseBody = if (

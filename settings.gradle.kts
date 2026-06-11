@@ -13,3 +13,21 @@ use("ktor")
 use("okhttp")
 use("sentry")
 use("slf4j")
+
+dependencyResolutionManagement {
+    // Use Maven Central and the Gradle Plugin Portal for resolving dependencies in the shared build logic (`buildSrc`) project.
+    @Suppress("UnstableApiUsage")
+    repositories {
+        mavenCentral()
+        mavenLocal()
+    }
+
+    versionCatalogs {
+        create("kt") {
+            from(files("gradle/kotlin.versions.toml"))
+        }
+//        create("jade") {
+//            from(files("gradle/jade.versions.toml"))
+//        }
+    }
+}

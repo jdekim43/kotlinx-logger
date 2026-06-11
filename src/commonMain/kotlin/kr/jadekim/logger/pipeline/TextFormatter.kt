@@ -11,7 +11,7 @@ open class TextFormatter(
 
     override val key = Key
 
-    override fun handle(log: Log): SerializedLog.String {
+    override fun handle(log: Log): SerializedLog.LogString {
         val text = buildString {
             append(log.timestamp.toString().padEnd(23))
             append(' ')
@@ -22,10 +22,11 @@ open class TextFormatter(
             append(log.message)
 
             if (printMeta && log.meta.isNotEmpty()) {
+                append(' ')
                 log.meta.map { "${it.key}=${it.value}" }.joinTo(this, ", ", prefix = "(", postfix = ")")
             }
         }
 
-        return SerializedLog.String(log, text)
+        return SerializedLog.LogString(log, text)
     }
 }

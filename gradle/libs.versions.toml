@@ -1,0 +1,24 @@
+[versions]
+jreleaser = "1.20.0"
+stately = "2.1.0"
+koin = "4.1.1"
+gson = "2.13.2"
+jackson = "2.21.0"
+slf4j = "2.0.17"
+sentry = "8.31.0"
+okhttp = "5.3.2"
+
+[libraries]
+stately-concurrency = { module = "co.touchlab:stately-concurrency", version.ref = "stately" }
+stately-collections = { module = "co.touchlab:stately-collections", version.ref = "stately" }
+koin-core = { module = "io.insert-koin:koin-core", version.ref = "koin" }
+gson = { module = "com.google.code.gson:gson", version.ref = "gson" }
+jackson-kotlin = { module = "com.fasterxml.jackson.module:jackson-module-kotlin", version.ref = "jackson" }
+jackson-databind = { module = "com.fasterxml.jackson.core:jackson-databind", version.ref = "jackson" }
+slf4j-api = { module = "org.slf4j:slf4j-api", version.ref = "slf4j" }
+sentry = { module = "io.sentry:sentry", version.ref = "sentry" }
+sentry-kotlin = { module = "io.sentry:sentry-kotlin-extensions", version.ref = "sentry" }
+okhttp-loggingInterceptor = { module = "com.squareup.okhttp3:logging-interceptor", version.ref = "okhttp" }
+
+[plugins]
+jreleaser = { id = "org.jreleaser", version.ref = "jreleaser" }

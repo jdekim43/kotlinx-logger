@@ -1,7 +1,6 @@
 package kr.jadekim.logger.pipeline
 
 import kr.jadekim.logger.Log
-import kr.jadekim.logger.LogLevel
 import kr.jadekim.logger.SerializedLog
 
 internal expect fun eprintln(text: String)
@@ -25,14 +24,14 @@ class StdOutPrinter(
 
     override fun handle(log: Log): Log {
         when (log) {
-            is SerializedLog.String -> {
-                if (log.level.isPrintableAt(LogLevel.ERROR)) {
+            is SerializedLog.LogString -> {
+                if (useStdErr) {
                     eprintln(log.data)
                 } else {
                     println(log.data)
                 }
             }
-            else -> println("ERROR: StdOutPrinter is only acceptable SerializedLog.String. Require to install TextFormatter")
+            else -> eprintln("ERROR: StdOutPrinter is only acceptable SerializedLog.LogString. Require to install TextFormatter before printer")
         }
 
         if (printStackTrace) {

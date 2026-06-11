@@ -1,8 +1,5 @@
 package kr.jadekim.logger.integration
 
-import kotlinx.datetime.Instant
-import kotlinx.datetime.TimeZone
-import kotlinx.datetime.toLocalDateTime
 import kr.jadekim.logger.JLog
 import kr.jadekim.logger.LogData
 import kr.jadekim.logger.LogLevel
@@ -11,6 +8,7 @@ import java.util.logging.Handler
 import java.util.logging.Level
 import java.util.logging.LogManager
 import java.util.logging.LogRecord
+import kotlin.time.Instant
 
 class JulLogger : Handler() {
 
@@ -20,6 +18,7 @@ class JulLogger : Handler() {
         private fun getRootLogger(): java.util.logging.Logger {
             return LogManager.getLogManager().getLogger("")
         }
+
         @JvmStatic
         fun install() {
             LogManager.getLogManager().getLogger("").addHandler(JulLogger())
@@ -50,7 +49,7 @@ class JulLogger : Handler() {
     private val logger = JLog.get("JulLogger")
 
     private val Level.jlogLevel: LogLevel?
-        get() = when(this) {
+        get() = when (this) {
             Level.OFF -> LogLevel.NONE
             Level.SEVERE -> LogLevel.ERROR
             Level.WARNING -> LogLevel.WARNING
@@ -62,7 +61,8 @@ class JulLogger : Handler() {
 
     override fun publish(record: LogRecord?) {
         val level = record?.level?.jlogLevel ?: return
-        val threadName = Thread.getAllStackTraces().asIterable().find { it.key.id == record.threadID.toLong() }?.key?.name
+        val threadName =
+            Thread.getAllStackTraces().asIterable().find { it.key.id == record.threadID.toLong() }?.key?.name
 
         logger.log(
             LogData(
@@ -80,8 +80,7 @@ class JulLogger : Handler() {
                     ),
                 ),
                 threadName,
-                Instant.fromEpochMilliseconds(record.millis)
-                    .toLocalDateTime(TimeZone.currentSystemDefault()),
+                Instant.fromEpochMilliseconds(record.millis),
             )
         )
     }

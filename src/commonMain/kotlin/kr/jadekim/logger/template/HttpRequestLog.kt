@@ -1,10 +1,12 @@
 package kr.jadekim.logger.template
 
-import kotlinx.datetime.*
 import kr.jadekim.logger.LogData
 import kr.jadekim.logger.LogLevel
 import kr.jadekim.logger.context.EmptyLogContext
 import kr.jadekim.logger.context.LogContext
+import kotlin.time.Clock
+import kotlin.time.DurationUnit
+import kotlin.time.Instant
 
 data class HttpRequestLog(
     val protocol: String,
@@ -17,7 +19,7 @@ data class HttpRequestLog(
     val headers: Map<String, String?> = emptyMap(),
     val body: Any? = null,
     val throwable: Throwable? = null,
-    val timestamp: LocalDateTime = Clock.System.now().toLocalDateTime(TimeZone.UTC),
+    val timestamp: Instant = Clock.System.now(),
 ) {
 
     internal val urlWithoutQuery = "$schema://$host:$port$path"
@@ -55,11 +57,10 @@ data class HttpResponseLog(
     val headers: Map<String, String?> = emptyMap(),
     val body: Any? = null,
     val throwable: Throwable? = null,
-    val timestamp: LocalDateTime = Clock.System.now().toLocalDateTime(TimeZone.UTC),
+    val timestamp: Instant = Clock.System.now(),
 ) {
 
-    val duration = timestamp.toInstant(TimeZone.UTC).toEpochMilliseconds() - request.timestamp.toInstant(TimeZone.UTC)
-        .toEpochMilliseconds()
+    val duration = timestamp - request.timestamp
 
     fun toLogData(
         loggerName: String,
@@ -80,7 +81,7 @@ data class HttpResponseLog(
                 "body" to body,
                 "timestamp" to timestamp,
             ),
-            "duration" to duration,
+            "duration" to duration.toLong(DurationUnit.MILLISECONDS),
         )
 
         if (withRequest) {
