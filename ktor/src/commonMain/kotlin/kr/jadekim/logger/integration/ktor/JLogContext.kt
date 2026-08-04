@@ -1,7 +1,7 @@
 package kr.jadekim.logger.integration.ktor
 
 import io.ktor.server.application.*
-import io.ktor.server.plugins.callid.*
+import io.ktor.server.plugins.callid.callId
 import io.ktor.server.request.*
 import io.ktor.server.routing.*
 import io.ktor.util.*
