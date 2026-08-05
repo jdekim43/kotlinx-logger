@@ -10,6 +10,8 @@ repositories {
 }
 
 dependencies {
+    implementation(enforcedPlatform("org.bouncycastle:bc-jdk18on-bom:1.84"))
+
     implementation(kt.kotlin.gradlePlugin)
     implementation(libs.android.kmp.library.gradlePlugin)
     implementation(kt.dokka)
