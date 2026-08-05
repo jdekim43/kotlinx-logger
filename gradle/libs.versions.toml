@@ -1,5 +1,5 @@
 [versions]
-kotlinx = "3.0.0-beta.1"
+kotlinx = "3.0.0-beta.2"
 stately = "2.1.0"
 gson = "2.14.0"
 jackson = "3.2.1"
