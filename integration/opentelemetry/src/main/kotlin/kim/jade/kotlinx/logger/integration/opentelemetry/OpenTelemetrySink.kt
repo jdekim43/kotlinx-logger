@@ -11,9 +11,9 @@ class OpenTelemetrySink(private val otelLoggerProvider: io.opentelemetry.api.log
 
     constructor(openTelemetry: OpenTelemetry) : this(openTelemetry.logsBridge)
 
-    companion object Key : LogPipe.Key<OpenTelemetrySink>
+    data class Key(val otelLoggerProvider: io.opentelemetry.api.logs.LoggerProvider) : LogPipe.Key<OpenTelemetrySink>
 
-    override val key: LogPipe.Key<out LogPipe> = Key
+    override val key: LogPipe.Key<out LogPipe> = Key(otelLoggerProvider)
 
     override fun apply(record: LogRecord): LogRecord {
         val otelLogger = otelLoggerProvider.get(record.loggerName)

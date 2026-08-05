@@ -1,11 +1,12 @@
 [versions]
+agp = "9.3.1"
 kotlinx = "3.0.0-beta.2"
 stately = "2.1.0"
 gson = "2.14.0"
 jackson = "3.2.1"
 koin = "4.2.2"
 slf4j = "2.0.18"
-sentry = "8.48.0"
+sentry = "8.51.0"
 okhttp = "5.4.0"
 otel = "1.64.0"
 
@@ -13,6 +14,7 @@ otel = "1.64.0"
 jreleaser = { id = "org.jreleaser", version = "1.25.0" }
 
 [libraries]
+android-kmp-library-gradlePlugin = { module = "com.android.kotlin.multiplatform.library:com.android.kotlin.multiplatform.library.gradle.plugin", version.ref = "agp" }
 kotlinx = { module = "kim.jade:kotlinx", version.ref = "kotlinx" }
 stately-collections = { module = "co.touchlab:stately-collections", version.ref = "stately" }
 gson = { module = "com.google.code.gson:gson", version.ref = "gson" }

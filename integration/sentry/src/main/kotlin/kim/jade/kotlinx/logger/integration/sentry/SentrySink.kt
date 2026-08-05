@@ -12,9 +12,9 @@ class SentrySink(
     val isAcceptable: (record: LogRecord) -> Boolean = { it.level.isPrintableAt(LogLevel.WARNING) },
 ) : LogPipe {
 
-    companion object : LogPipe.Key<SentrySink>
+    companion object Key : LogPipe.Key<SentrySink>
 
-    override val key: LogPipe.Key<out LogPipe> = SentrySink
+    override val key: LogPipe.Key<out LogPipe> = Key
 
     override fun apply(record: LogRecord): LogRecord {
         if (!isAcceptable(record)) {

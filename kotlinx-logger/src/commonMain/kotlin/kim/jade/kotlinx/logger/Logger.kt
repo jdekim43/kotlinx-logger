@@ -9,7 +9,7 @@ import kim.jade.kotlinx.logger.context.LogContext
 import kim.jade.kotlinx.logger.context.snapCurrentLogContext
 import kim.jade.kotlinx.logger.pipeline.LogPipeline
 import kim.jade.kotlinx.logger.pipeline.LoggerNameShortener
-import kim.jade.kotlinx.logger.pipeline.StdOutPrinter
+import kim.jade.kotlinx.logger.pipeline.StdOutSink
 import kim.jade.kotlinx.logger.pipeline.TextFormatter
 import kotlin.concurrent.atomics.AtomicBoolean
 import kotlin.concurrent.atomics.ExperimentalAtomicApi
@@ -39,7 +39,7 @@ open class Logger(val name: String, level: LogLevel? = null, pipeline: LogPipeli
         var pipeline: LogPipeline = LogPipeline()
             .install(LoggerNameShortener())
             .install(TextFormatter())
-            .install(StdOutPrinter())
+            .install(StdOutSink())
 
         private val loggers = SharedHashMap<String, Logger>()
 

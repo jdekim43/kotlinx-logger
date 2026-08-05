@@ -17,9 +17,6 @@ kotlin {
             compileOnly(kt.kotlinx.coroutine)
         }
 
-        jvmMain.dependencies {
-        }
-
         nativeMain.dependencies {
             api(kt.kotlinx.coroutine)
         }

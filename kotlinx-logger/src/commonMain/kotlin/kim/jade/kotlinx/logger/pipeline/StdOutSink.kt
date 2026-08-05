@@ -4,12 +4,12 @@ import kim.jade.kotlinx.io.eprintln
 import kim.jade.kotlinx.logger.LogRecord
 import kim.jade.kotlinx.logger.SerializedLog
 
-class StdOutPrinter(
+open class StdOutSink(
     var printStackTrace: Boolean = true,
     var useStdErr: Boolean = false,
 ) : LogPipe {
 
-    companion object Key : LogPipe.Key<StdOutPrinter>
+    companion object Key : LogPipe.Key<StdOutSink>
 
     override val key: LogPipe.Key<out LogPipe> = Key
 
@@ -21,7 +21,7 @@ class StdOutPrinter(
                 println(record.serialized)
             }
         } else {
-            eprintln("ERROR: StdOutPrinter is only acceptable SerializedLog<String>. Require to install TextFormatter before printer")
+            eprintln("ERROR: StdOutSink is only acceptable SerializedLog<String>. Require to install TextFormatter before printer")
         }
 
         if (printStackTrace) {

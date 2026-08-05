@@ -30,7 +30,7 @@
 | OpenTelemetry           | `kotlinx-logger-integration-opentelemetry` | JVM           |
 | Sentry                  | `kotlinx-logger-integration-sentry`        | JVM           |
 
-The Multiplatform modules target JVM 11, JS (browser and Node.js, ES2015), macOS Arm64, iOS Arm64/x64/Simulator Arm64, watchOS Arm64/Simulator Arm64, tvOS Arm64/Simulator Arm64, Linux x64/Arm64, and Windows MinGW x64.
+The Multiplatform modules target JVM 11, Android, JS (browser and Node.js, ES2015), macOS Arm64, iOS Arm64/x64/Simulator Arm64, watchOS Arm64/Simulator Arm64, tvOS Arm64/Simulator Arm64, Linux x64/Arm64, and Windows MinGW x64.
 
 ## Installation
 
@@ -91,7 +91,7 @@ class OrderService {
 When `private val logger by Logger` is declared as a class member, the logger name is the class's qualified name. The default global level is `INFO`, and the default pipeline runs in this order:
 
 ```text
-LoggerNameShortener -> TextFormatter -> StdOutPrinter
+LoggerNameShortener -> TextFormatter -> StdOutSink
 ```
 
 The default output has the following form. The timestamp and logger name vary at runtime.
@@ -376,22 +376,22 @@ Logger.pipeline = LogPipeline()
     .install(FilterPipe { record -> record.context["healthCheck"] != true })
     .install(LoggerNameShortener(preferLength = 30))
     .install(TextFormatter(printMeta = true, enableColor = true))
-    .install(StdOutPrinter(printStackTrace = true, useStdErr = false))
+    .install(StdOutSink(printStackTrace = true, useStdErr = false))
 ```
 
-Install serializers and formatters before `StdOutPrinter`. `StdOutPrinter` only prints `SerializedLog.String` records.
+Install serializers and formatters before `StdOutSink`. `StdOutSink` only prints `SerializedLog.String` records.
 
 ### Pipeline management
 
 ```kotlin
 val pipeline = LogPipeline()
     .install(TextFormatter())
-    .install(StdOutPrinter())
+    .install(StdOutSink())
 val customSink = SinkPipe { record -> println(record.body) }
 
 pipeline.install(FilterPipe { it.level != LogLevel.TRACE }, index = 0)
 pipeline.installBefore(MapPipe(::enrich), TextFormatter)
-pipeline.installAfter(customSink, StdOutPrinter)
+pipeline.installAfter(customSink, StdOutSink)
 
 pipeline.isInstalled(TextFormatter)      // true
 pipeline.installIndexOf(TextFormatter)   // -1 if absent
@@ -423,7 +423,7 @@ pipeline.clear()                         // Remove all pipes
 | `MapPipe(transform)`                                       | Transforms a record into another `LogRecord`.                                               |
 | `LoggerNameShortener(preferLength = 36)`                   | Shortens leading dot-separated name segments to one character; the target is not a strict maximum. |
 | `TextFormatter(printMeta = true, enableColor = false)`     | Produces a text `SerializedLog.String`; context is not included.                           |
-| `StdOutPrinter(printStackTrace = true, useStdErr = false)` | Prints serialized messages to stdout or stderr; optional stack traces are printed to stderr. |
+| `StdOutSink(printStackTrace = true, useStdErr = false)` | Prints serialized messages to stdout or stderr; optional stack traces are printed to stderr. |
 
 `LoggerNameShortener` cannot be installed more than once with the same key and only transforms `LogRecordData` records.
 
@@ -474,7 +474,7 @@ import kim.jade.kotlinx.logger.integration.gson.GsonFormatter
 Logger.pipeline = LogPipeline()
     .install(LoggerNameShortener())
     .install(GsonFormatter(traceLimit = 12))
-    .install(StdOutPrinter(printStackTrace = false))
+    .install(StdOutSink(printStackTrace = false))
 ```
 
 ### Jackson 3
@@ -485,7 +485,7 @@ import kim.jade.kotlinx.logger.integration.jackson.JacksonFormatter
 Logger.pipeline = LogPipeline()
     .install(LoggerNameShortener())
     .install(JacksonFormatter(traceLimit = 12))
-    .install(StdOutPrinter(printStackTrace = false))
+    .install(StdOutSink(printStackTrace = false))
 ```
 
 | Option                            | Description                                                                                              |
@@ -708,7 +708,7 @@ Initialize the OpenTelemetry SDK, then install `OpenTelemetrySink`. Its construc
 ```kotlin
 import kim.jade.kotlinx.logger.integration.opentelemetry.OpenTelemetrySink
 
-val openTelemetry = ...
+//val openTelemetry = ...
 
 Logger.pipeline.install(OpenTelemetrySink(openTelemetry))
 ```

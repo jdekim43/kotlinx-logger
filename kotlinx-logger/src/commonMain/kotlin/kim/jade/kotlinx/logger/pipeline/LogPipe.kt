@@ -9,7 +9,10 @@ interface LogPipe {
     val key: Key<out LogPipe>
 
     fun installTo(pipeline: LogPipeline, index: Int) {
-        pipeline.addPipe(this, index)
+        val indexes = pipeline.pipes.withIndex().filter { it.value.key == key }.map { it.index }
+        val newIndex = index - indexes.count { it <= index }
+        pipeline.uninstall(key)
+        pipeline.addPipe(this, newIndex)
     }
 
     fun apply(record: LogRecord): LogRecord?
