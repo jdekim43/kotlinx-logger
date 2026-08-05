@@ -20,6 +20,7 @@ val nonJvmArtifactIds = listOf(
     "linuxx64",
     "linuxarm64",
     "mingwx64",
+    "android"
 )
 
 allprojects {
