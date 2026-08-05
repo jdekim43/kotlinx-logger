@@ -1,12 +1,14 @@
 [versions]
-kotlin = "2.3.0"
-kotlinx-coroutine = "1.10.2"
-dokka = "2.1.0"
-ktor = "3.4.0"
+kotlin = "2.4.10"
+kotlinx-coroutine = "1.11.0"
+kotlinx-io = "0.9.1"
+dokka = "2.2.0"
+ktor = "3.5.1"
 
 [libraries]
 kotlin-gradlePlugin = { module = "org.jetbrains.kotlin:kotlin-gradle-plugin", version.ref = "kotlin" }
 kotlinx-coroutine = { module = "org.jetbrains.kotlinx:kotlinx-coroutines-core", version.ref = "kotlinx-coroutine" }
+kotlinx-io = { module = "org.jetbrains.kotlinx:kotlinx-io-core", version.ref = "kotlinx-io" }
 dokka = { module = "org.jetbrains.dokka:org.jetbrains.dokka.gradle.plugin", version.ref = "dokka" }
 dokka-javadoc = { module = "org.jetbrains.dokka:javadoc-plugin", version.ref = "dokka" }
 ktor-server-core = { module = "io.ktor:ktor-server-core", version.ref = "ktor" }

@@ -1,0 +1,113 @@
+package kim.jade.log.integration.jackson
+
+import kim.jade.log.LogRecord
+import kim.jade.log.SerializedLog
+import kim.jade.log.ThrowableObject
+import kim.jade.log.pipeline.LogPipe
+import tools.jackson.core.JsonGenerator
+import tools.jackson.core.StreamWriteFeature
+import tools.jackson.databind.ObjectMapper
+import tools.jackson.databind.SerializationContext
+import tools.jackson.databind.ValueSerializer
+import tools.jackson.databind.json.JsonMapper
+import tools.jackson.databind.module.SimpleModule
+import tools.jackson.module.kotlin.jacksonObjectMapper
+import java.io.PrintWriter
+import java.io.StringWriter
+import kotlin.collections.iterator
+import kotlin.reflect.KVisibility
+import kotlin.reflect.full.memberProperties
+import kotlin.reflect.jvm.isAccessible
+import kotlin.time.Instant
+
+class JacksonFormatter(
+    mapper: ObjectMapper = jacksonObjectMapper(),
+    var traceLimit: Int = 12,
+    useCustomDateSerializer: Boolean = false,
+) : LogPipe {
+
+    companion object Key : LogPipe.Key<JacksonFormatter>
+
+    override val key: LogPipe.Key<out LogPipe> = Key
+
+    private val timestampModule = SimpleModule().apply {
+        addSerializer(Instant::class.java, InstantSerializer())
+    }
+
+    private val throwableModule = SimpleModule().apply {
+        addSerializer(Throwable::class.java, ThrowableSerializer())
+        addSerializer(ThrowableObject::class.java, ThrowableObjectSerializer())
+    }
+
+    private val mapper: ObjectMapper = mapper.rebuild<JsonMapper, JsonMapper.Builder>()
+        .disable(StreamWriteFeature.AUTO_CLOSE_TARGET)
+        .addModule(throwableModule)
+        .apply {
+            if (!useCustomDateSerializer) {
+                addModule(timestampModule)
+            }
+        }
+        .build()
+
+    override fun apply(record: LogRecord): SerializedLog.String =
+        SerializedLog.String(record, mapper.writeValueAsString(record))
+
+    private class InstantSerializer : ValueSerializer<Instant>() {
+
+        override fun serialize(value: Instant?, gen: JsonGenerator, serializers: SerializationContext) {
+            if (value == null) {
+                gen.writeNull()
+                return
+            }
+
+            val timestamp = value.toEpochMilliseconds()
+
+            gen.writeNumber(timestamp)
+        }
+    }
+
+    private inner class ThrowableSerializer : ValueSerializer<Throwable>() {
+
+        override fun serialize(value: Throwable, gen: JsonGenerator, serializers: SerializationContext) {
+            if (traceLimit == Int.MAX_VALUE) {
+                val writer = StringWriter()
+                value.printStackTrace(PrintWriter(writer))
+                gen.writeString(writer.toString())
+                return
+            }
+
+            val builder = StringBuilder()
+
+            builder.appendLine(value.toString())
+
+            value.stackTrace
+                .take(traceLimit)
+                .forEach {
+                    builder.appendLine("\tat $it")
+                }
+
+            gen.writeString(builder.toString())
+        }
+    }
+
+    private class ThrowableObjectSerializer : ValueSerializer<ThrowableObject>() {
+
+        override fun serialize(value: ThrowableObject, gen: JsonGenerator, serializers: SerializationContext) {
+            val throwable = value.throwable
+            if (throwable == null) {
+                gen.writeNull()
+                return
+            }
+
+            val fields = throwable::class.memberProperties
+                .filter { it.visibility == KVisibility.PUBLIC && !it.isSuspend && !it.isLateinit && it.isAccessible }
+                .associate { it.name to it.call(throwable) }
+
+            gen.writeStartObject()
+            for ((key, value) in fields) {
+                serializers.defaultSerializeProperty(key, value, gen)
+            }
+            gen.writeEndObject()
+        }
+    }
+}

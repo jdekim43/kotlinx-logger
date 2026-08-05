@@ -1,33 +1,49 @@
-rootProject.name = "j-logger"
+import kim.jade.gradle.plugin.cleanarch.plugin.module
 
-fun use(name: String) {
-    include(name)
-    project(":$name").name = "${rootProject.name}-$name"
+rootProject.name = "kotlinx-logger"
+
+pluginManagement {
+    repositories {
+        mavenLocal()
+        mavenCentral()
+        google()
+        gradlePluginPortal()
+    }
 }
 
-use("coroutine")
-use("gson")
-use("jackson")
-use("koin")
-use("ktor")
-use("okhttp")
-use("sentry")
-use("slf4j")
+plugins {
+    id("kim.jade.gradle.plugin.cleanarch") version "0.1.18"
+}
+
+include(":kotlinx-logger")
+module("integration-gson")
+module("integration-jackson")
+module("integration-jvm")
+module("integration-koin")
+module("integration-ktor")
+module("integration-okhttp")
+module("integration-opentelemetry")
+module("integration-sentry")
 
 dependencyResolutionManagement {
-    // Use Maven Central and the Gradle Plugin Portal for resolving dependencies in the shared build logic (`buildSrc`) project.
-    @Suppress("UnstableApiUsage")
     repositories {
-        mavenCentral()
         mavenLocal()
+        mavenCentral()
+        google()
+        gradlePluginPortal()
     }
 
     versionCatalogs {
+        create("kotlinWrappers") {
+            from("org.jetbrains.kotlin-wrappers:kotlin-wrappers-catalog:2025.11.12")
+        }
+
         create("kt") {
             from(files("gradle/kotlin.versions.toml"))
         }
-//        create("jade") {
-//            from(files("gradle/jade.versions.toml"))
-//        }
+
+        create("kotlincrypto") {
+            from("org.kotlincrypto:version-catalog:0.8.0")
+        }
     }
 }

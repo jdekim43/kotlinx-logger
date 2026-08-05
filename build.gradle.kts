@@ -2,24 +2,29 @@ import org.jreleaser.model.Active
 import org.jreleaser.model.Signing
 
 plugins {
-    id("convention.kotlin-multiplatform")
-    id("convention.publish")
-
+    id("java")
     alias(libs.plugins.jreleaser)
 }
 
-allprojects {
-    group = "kr.jadekim"
-    version = "2.2.0-beta1"
-}
+val releaseVersion = providers.gradleProperty("releaseVersion").getOrElse("3.0.0-SNAPSHOT")
+val nonJvmArtifactIds = listOf(
+    "js",
+    "macosarm64",
+    "iosarm64",
+    "iosx64",
+    "iossimulatorarm64",
+    "watchosarm64",
+    "watchossimulatorarm64",
+    "tvosarm64",
+    "tvossimulatorarm64",
+    "linuxx64",
+    "linuxarm64",
+    "mingwx64",
+)
 
-kotlin {
-    sourceSets {
-        commonMain.dependencies {
-            implementation(libs.stately.concurrency)
-            implementation(libs.stately.collections)
-        }
-    }
+allprojects {
+    group = "kim.jade"
+    version = releaseVersion
 }
 
 jreleaser {
@@ -27,9 +32,9 @@ jreleaser {
         author("Jade Kim")
         license.set("Apache-2.0")
         links {
-            vcsBrowser.set("https://github.com/jdekim43/j-logger")
+            vcsBrowser.set("https://github.com/jdekim43/kotlinx-logger")
         }
-        inceptionYear.set("2021")
+        inceptionYear.set("2026")
     }
 
     signing {
@@ -45,10 +50,10 @@ jreleaser {
                     active.set(Active.RELEASE)
                     url.set("https://central.sonatype.com/api/v1/publisher")
 
-                    listOf(rootProject).forEach {
+                    subprojects.forEach {
                         stagingRepository(it.layout.buildDirectory.dir("staging-deploy").get().asFile.absolutePath)
 
-                        listOf("iosarm64", "iossimulatorarm64", "js").forEach { target ->
+                        nonJvmArtifactIds.forEach { target ->
                             artifactOverride {
                                 artifactId = "${it.name}-$target"
                                 jar = false
@@ -70,10 +75,10 @@ jreleaser {
                     closeRepository.set(true)
                     releaseRepository.set(true)
 
-                    listOf(rootProject).forEach {
+                    subprojects.forEach {
                         stagingRepository(it.layout.buildDirectory.dir("staging-deploy").get().asFile.absolutePath)
 
-                        listOf("iosarm64", "iossimulatorarm64", "js").forEach { target ->
+                        nonJvmArtifactIds.forEach { target ->
                             artifactOverride {
                                 artifactId = "${it.name}-$target"
                                 jar = false
@@ -91,6 +96,7 @@ jreleaser {
     release {
         github {
             repoOwner = "jdekim43"
+            skipTag = true
         }
     }
 }
@@ -103,14 +109,12 @@ val clearStagingDirectory = tasks.create<Delete>("clearStagingDirectory") {
     }
 }
 
+tasks.register("publish") {
+    group = "publishing"
 
-tasks.named("publish") {
-    dependsOn(clearStagingDirectory)
     subprojects.forEach {
         val publishTask = it.tasks.named("publish")
         publishTask.configure { dependsOn(clearStagingDirectory) }
         dependsOn(publishTask)
     }
-
-    finalizedBy(":jreleaserFullRelease")
 }

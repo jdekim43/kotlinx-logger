@@ -1,0 +1,117 @@
+name: Publish to Maven Central
+
+on:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: write
+
+concurrency:
+  group: maven-central-publish
+  cancel-in-progress: false
+
+jobs:
+  publish:
+    name: Publish ${{ github.ref_name }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 90
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Resolve release version
+        id: version
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          release_version="${GITHUB_REF_NAME#v}"
+          if [[ ! "$release_version" =~ ^[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z][0-9A-Za-z.-]*)?$ ]]; then
+            echo "Expected a semantic version tag such as v1.0.0 or v1.0.0-beta1, got: $GITHUB_REF_NAME" >&2
+            exit 1
+          fi
+
+          echo "release_version=$release_version" >> "$GITHUB_OUTPUT"
+
+      - name: Set up Java
+        uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: |
+            11
+            21
+
+      - name: Set up Gradle
+        uses: gradle/actions/setup-gradle@v6
+        with:
+          cache-provider: basic
+
+      - name: Validate release secrets
+        shell: bash
+        env:
+          MAVEN_CENTRAL_USERNAME: ${{ secrets.MAVEN_CENTRAL_USERNAME }}
+          MAVEN_CENTRAL_PASSWORD: ${{ secrets.MAVEN_CENTRAL_PASSWORD }}
+          GPG_PUBLIC_KEY: ${{ secrets.GPG_PUBLIC_KEY }}
+          GPG_SECRET_KEY: ${{ secrets.GPG_SECRET_KEY }}
+          GPG_PASSPHRASE: ${{ secrets.GPG_PASSPHRASE }}
+        run: |
+          set -euo pipefail
+
+          for secret_name in \
+            MAVEN_CENTRAL_USERNAME \
+            MAVEN_CENTRAL_PASSWORD \
+            GPG_PUBLIC_KEY \
+            GPG_SECRET_KEY \
+            GPG_PASSPHRASE
+          do
+            if [[ -z "${!secret_name}" ]]; then
+              echo "$secret_name secret is required." >&2
+              exit 1
+            fi
+          done
+
+      - name: Check
+        run: ./gradlew clean check -PreleaseVersion="${{ steps.version.outputs.release_version }}" --no-daemon --stacktrace
+
+      - name: Stage Maven publications
+        run: ./gradlew publish -PreleaseVersion="${{ steps.version.outputs.release_version }}" --no-daemon --stacktrace
+
+      - name: Prepare signing keys
+        id: signing
+        shell: bash
+        env:
+          GPG_PUBLIC_KEY: ${{ secrets.GPG_PUBLIC_KEY }}
+          GPG_SECRET_KEY: ${{ secrets.GPG_SECRET_KEY }}
+        run: |
+          set -euo pipefail
+
+          key_directory="$RUNNER_TEMP/jreleaser-keys"
+          mkdir -p "$key_directory"
+          chmod 700 "$key_directory"
+          umask 077
+          printf '%s\n' "$GPG_PUBLIC_KEY" > "$key_directory/public.asc"
+          printf '%s\n' "$GPG_SECRET_KEY" > "$key_directory/secret.asc"
+
+          echo "public_key=$key_directory/public.asc" >> "$GITHUB_OUTPUT"
+          echo "secret_key=$key_directory/secret.asc" >> "$GITHUB_OUTPUT"
+
+      - name: Publish and create GitHub release
+        env:
+          JRELEASER_GITHUB_TOKEN: ${{ github.token }}
+          JRELEASER_MAVENCENTRAL_RELEASE_USERNAME: ${{ secrets.MAVEN_CENTRAL_USERNAME }}
+          JRELEASER_MAVENCENTRAL_RELEASE_PASSWORD: ${{ secrets.MAVEN_CENTRAL_PASSWORD }}
+          JRELEASER_GPG_PUBLIC_KEY: ${{ steps.signing.outputs.public_key }}
+          JRELEASER_GPG_SECRET_KEY: ${{ steps.signing.outputs.secret_key }}
+          JRELEASER_GPG_PASSPHRASE: ${{ secrets.GPG_PASSPHRASE }}
+        run: ./gradlew jreleaserFullRelease -PreleaseVersion="${{ steps.version.outputs.release_version }}" --no-daemon --stacktrace
+
+      - name: Remove signing keys
+        if: always()
+        shell: bash
+        run: rm -f "$RUNNER_TEMP/jreleaser-keys/public.asc" "$RUNNER_TEMP/jreleaser-keys/secret.asc"
