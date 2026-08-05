@@ -1,6 +1,6 @@
 package org.slf4j.impl;
 
-import kim.jade.log.integration.slf4j.KotlinxLoggerMdcAdapter;
+import kim.jade.kotlinx.logger.integration.slf4j.KotlinxLoggerMdcAdapter;
 import org.slf4j.spi.MDCAdapter;
 
 @SuppressWarnings("ALL")

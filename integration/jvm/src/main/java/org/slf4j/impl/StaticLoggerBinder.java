@@ -1,6 +1,6 @@
 package org.slf4j.impl;
 
-import kim.jade.log.integration.slf4j.KotlinxLoggerFactory;
+import kim.jade.kotlinx.logger.integration.slf4j.KotlinxLoggerFactory;
 import org.slf4j.ILoggerFactory;
 import org.slf4j.spi.LoggerFactoryBinder;
 

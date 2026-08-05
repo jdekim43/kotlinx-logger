@@ -74,7 +74,7 @@ kotlin {
 ## Quick start
 
 ```kotlin
-import kim.jade.log.Logger
+import kim.jade.kotlinx.logger.Logger
 
 class OrderService {
     private val logger by Logger
@@ -469,7 +469,7 @@ The Gson and Jackson formatters are provided by separate JVM integration modules
 ### Gson
 
 ```kotlin
-import kim.jade.log.integration.gson.GsonFormatter
+import kim.jade.kotlinx.logger.integration.gson.GsonFormatter
 
 Logger.pipeline = LogPipeline()
     .install(LoggerNameShortener())
@@ -480,7 +480,7 @@ Logger.pipeline = LogPipeline()
 ### Jackson 3
 
 ```kotlin
-import kim.jade.log.integration.jackson.JacksonFormatter
+import kim.jade.kotlinx.logger.integration.jackson.JacksonFormatter
 
 Logger.pipeline = LogPipeline()
     .install(LoggerNameShortener())
@@ -536,7 +536,7 @@ julLogger.info("message from JUL")
 ### Koin
 
 ```kotlin
-import kim.jade.log.integration.koin.KoinLogger
+import kim.jade.kotlinx.logger.integration.koin.KoinLogger
 import org.koin.core.context.startKoin
 
 startKoin {
@@ -558,7 +558,7 @@ logger(KoinLogger(Logger.named("dependency-injection")))
 ```kotlin
 import io.ktor.server.application.install
 import io.ktor.server.request.header
-import kim.jade.log.integration.ktor.LogContext as KtorLogContext
+import kim.jade.kotlinx.logger.integration.ktor.LogContext as KtorLogContext
 
 install(KtorLogContext) {
     setupContext = { context ->
@@ -574,7 +574,7 @@ The plugin adds the call ID, HTTP method, path, and route to `CoroutineLogContex
 ```kotlin
 import io.ktor.server.application.install
 import io.ktor.server.request.path
-import kim.jade.log.integration.ktor.RequestLogger
+import kim.jade.kotlinx.logger.integration.ktor.RequestLogger
 
 install(RequestLogger) {
     logger = Logger.named("http-server")
@@ -624,7 +624,7 @@ The body is read only for POST, PUT, or PATCH requests whose content type is JSO
 #### Official `HttpLoggingInterceptor` adapter
 
 ```kotlin
-import kim.jade.log.integration.okhttp.OkHttpLogInterceptorFactory
+import kim.jade.kotlinx.logger.integration.okhttp.OkHttpLogInterceptorFactory
 import okhttp3.OkHttpClient
 import okhttp3.logging.HttpLoggingInterceptor
 
@@ -648,8 +648,8 @@ This adapter forwards the text lines produced by OkHttp's official interceptor t
 Use `OkHttpLogger` when you want request and response details recorded as structured metadata.
 
 ```kotlin
-import kim.jade.log.LogLevel
-import kim.jade.log.integration.okhttp.OkHttpLogger
+import kim.jade.kotlinx.logger.LogLevel
+import kim.jade.kotlinx.logger.integration.okhttp.OkHttpLogger
 import okhttp3.OkHttpClient
 
 val structuredClient = OkHttpClient.Builder()
@@ -686,7 +686,7 @@ Initialize Sentry before installing `SentrySink`.
 
 ```kotlin
 import io.sentry.Sentry
-import kim.jade.log.integration.sentry.SentrySink
+import kim.jade.kotlinx.logger.integration.sentry.SentrySink
 
 Sentry.init { options ->
     options.dsn = System.getenv("SENTRY_DSN")
@@ -706,7 +706,7 @@ By default, `SentrySink` forwards records at `WARNING` or a more severe level. P
 Initialize the OpenTelemetry SDK, then install `OpenTelemetrySink`. Its constructor accepts either `OpenTelemetry` or an OpenTelemetry `LoggerProvider`.
 
 ```kotlin
-import kim.jade.log.integration.opentelemetry.OpenTelemetrySink
+import kim.jade.kotlinx.logger.integration.opentelemetry.OpenTelemetrySink
 
 val openTelemetry = ...
 
@@ -722,7 +722,7 @@ Use `OTelKotlinxLoggerProvider` as an OpenTelemetry `LoggerProvider` to pass rec
 ```kotlin
 import io.opentelemetry.api.common.AttributeKey
 import io.opentelemetry.api.logs.Severity
-import kim.jade.log.integration.opentelemetry.OTelKotlinxLoggerProvider
+import kim.jade.kotlinx.logger.integration.opentelemetry.OTelKotlinxLoggerProvider
 
 val otelLogger = OTelKotlinxLoggerProvider()
     .loggerBuilder("checkout")
