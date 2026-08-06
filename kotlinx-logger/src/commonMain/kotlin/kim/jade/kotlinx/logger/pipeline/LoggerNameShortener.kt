@@ -3,7 +3,10 @@ package kim.jade.kotlinx.logger.pipeline
 import kim.jade.kotlinx.logger.LogRecord
 import kim.jade.kotlinx.logger.LogRecordData
 
-open class LoggerNameShortener(var preferLength: Int = 36) : LogPipe {
+open class LoggerNameShortener(
+    var preferLength: Int = 36,
+    var useSimpleName: Boolean = false,
+) : LogPipe {
 
     companion object Key : LogPipe.Key<LoggerNameShortener>
 
@@ -15,7 +18,7 @@ open class LoggerNameShortener(var preferLength: Int = 36) : LogPipe {
         super.installTo(pipeline, index)
     }
 
-    override fun apply(record: LogRecord): LogRecord? {
+    override fun apply(record: LogRecord): LogRecord {
         if (record is LogRecordData) {
             return record.copy(loggerName = transform(record.loggerName))
         }
@@ -24,8 +27,12 @@ open class LoggerNameShortener(var preferLength: Int = 36) : LogPipe {
     }
 
     protected fun transform(name: String): String {
+        if (useSimpleName) {
+            return name.substringAfterLast('.')
+        }
+
         val result = mutableListOf<String>()
-        val tokens = name.split(".")
+        val tokens = name.split('.')
 
         if (tokens.size < 2) {
             return name

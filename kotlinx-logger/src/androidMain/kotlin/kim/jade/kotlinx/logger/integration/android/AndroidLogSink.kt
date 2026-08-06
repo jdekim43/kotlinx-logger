@@ -14,14 +14,11 @@ class AndroidLogSink(
     override val key: LogPipe.Key<out LogPipe> = Key
 
     override fun apply(record: LogRecord): LogRecord {
-        if (record is SerializedLog<*> && record.serialized is String) {
-            Log.println(record.level.toAndroidLogLevel(), record.loggerName, record.serialized)
-        } else {
-            Log.e(
-                "AndroidLogSink",
-                "ERROR: StdOutSink is only acceptable SerializedLog<String>. Require to install TextFormatter before printer",
-            )
+        val message = if (record.eventName == null) record.body else {
+            "${record.eventName}: ${record.body}"
         }
+
+        Log.println(record.level.toAndroidLogLevel(), record.loggerName, message)
 
         if (printStackTrace) {
             record.exception?.printStackTrace()

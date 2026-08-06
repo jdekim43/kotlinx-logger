@@ -54,6 +54,11 @@ class LogPipeline {
         return pipes.indexOfFirst { it.key == pipe }
     }
 
+    @Suppress("UNCHECKED_CAST")
+    operator fun <T : LogPipe> get(key: LogPipe.Key<T>): List<T> {
+        return pipes.filter { it.key == key } as List<T>
+    }
+
     fun clear() {
         pipes.clear()
     }
