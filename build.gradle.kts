@@ -98,6 +98,7 @@ jreleaser {
         github {
             repoOwner = "jdekim43"
             skipTag = true
+            prerelease.pattern = ".*-*"
         }
     }
 }

@@ -7,4 +7,6 @@ dependencies {
     api(project(":kotlinx-logger"))
 
     api(libs.otel.api)
+
+    implementation(kotlin("reflect"))
 }
