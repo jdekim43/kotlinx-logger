@@ -13,7 +13,7 @@ class AndroidLogSink(
 
     override val key: LogPipe.Key<out LogPipe> = Key
 
-    override fun apply(record: LogRecord): LogRecord {
+    override fun apply(record: LogRecord, next: (LogRecord) -> Unit) {
         val message = if (record.eventName == null) record.body else {
             "${record.eventName}: ${record.body}"
         }
@@ -24,7 +24,7 @@ class AndroidLogSink(
             record.exception?.printStackTrace()
         }
 
-        return record
+        next(record)
     }
 
     private fun LogLevel.toAndroidLogLevel(): Int = when (this) {

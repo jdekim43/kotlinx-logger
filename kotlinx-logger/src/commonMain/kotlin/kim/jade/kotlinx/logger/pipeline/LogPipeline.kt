@@ -10,14 +10,19 @@ class LogPipeline {
 
     internal val pipes = mutableListOf<LogPipe>()
 
+    private val end: (LogRecord) -> Unit = {}
+    private var chain: (LogRecord) -> Unit = end
+
     fun install(pipe: LogPipe): LogPipeline {
-        pipe.installTo(this, pipes.size)
+        pipe.addTo(this, pipes.size)
+        rebuildChain()
 
         return this
     }
 
     fun install(pipe: LogPipe, index: Int): LogPipeline {
-        pipe.installTo(this, index)
+        pipe.addTo(this, index)
+        rebuildChain()
 
         return this
     }
@@ -25,7 +30,8 @@ class LogPipeline {
     fun installBefore(pipe: LogPipe, before: LogPipe.Key<out LogPipe>): LogPipeline {
         val index = pipes.indexOfFirst { it.key == before }
 
-        pipe.installTo(this, max(0, index))
+        pipe.addTo(this, max(0, index))
+        rebuildChain()
 
         return this
     }
@@ -33,17 +39,20 @@ class LogPipeline {
     fun installAfter(pipe: LogPipe, after: LogPipe.Key<out LogPipe>): LogPipeline {
         val index = pipes.indexOfLast { it.key == after }
 
-        pipe.installTo(this, min(index + 1, pipes.size))
+        pipe.addTo(this, min(index + 1, pipes.size))
+        rebuildChain()
 
         return this
     }
 
     fun uninstall(index: Int) {
         pipes.removeAt(index)
+        rebuildChain()
     }
 
     fun uninstall(pipe: LogPipe.Key<out LogPipe>) {
         pipes.removeAll { it.key == pipe }
+        rebuildChain()
     }
 
     fun isInstalled(pipe: LogPipe.Key<out LogPipe>): Boolean {
@@ -61,17 +70,30 @@ class LogPipeline {
 
     fun clear() {
         pipes.clear()
+        rebuildChain()
     }
 
     fun clone(): LogPipeline = LogPipeline().also {
         it.pipes.addAll(pipes)
+        it.rebuildChain()
     }
 
     fun handle(record: LogRecord) {
-        var record = record
+        val currentChain = chain
 
-        for (pipe in pipes) {
-            record = pipe.apply(record) ?: return
+        currentChain(record)
+    }
+
+    internal fun rebuildChain() {
+        var next = end
+
+        for (index in pipes.indices.reversed()) {
+            val pipe = pipes[index]
+            val downstream = next
+
+            next = { record -> pipe.apply(record, downstream) }
         }
+
+        chain = next
     }
 }

@@ -49,8 +49,12 @@ class JacksonFormatter(
         }
         .build()
 
-    override fun apply(record: LogRecord): SerializedLog.String =
+    fun format(record: LogRecord): SerializedLog.String =
         SerializedLog.String(record, mapper.writeValueAsString(record))
+
+    override fun apply(record: LogRecord, next: (LogRecord) -> Unit) {
+        next(format(record))
+    }
 
     private class InstantSerializer : ValueSerializer<Instant>() {
 

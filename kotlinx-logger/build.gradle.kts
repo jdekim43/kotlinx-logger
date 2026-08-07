@@ -14,7 +14,7 @@ kotlin {
             implementation(libs.kotlinx)
             implementation(libs.stately.collections)
 
-            compileOnly(kt.kotlinx.coroutine)
+            implementation(kt.kotlinx.coroutine)
         }
 
         nativeMain.dependencies {

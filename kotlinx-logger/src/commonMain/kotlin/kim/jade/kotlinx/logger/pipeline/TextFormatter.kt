@@ -27,7 +27,11 @@ class TextFormatter(
             LogLevel.TRACE -> style { black.bright }
         }
 
-    override fun apply(record: LogRecord): SerializedLog.String {
+    override fun apply(record: LogRecord, next: (LogRecord) -> Unit) {
+        next(format(record))
+    }
+
+    fun format(record: LogRecord): SerializedLog.String {
         val text = colored(enableColor) {
             record.timestamp.toString().padEnd(23).black.bright + ' ' + buildString {
                 if (record.threadName != null) {

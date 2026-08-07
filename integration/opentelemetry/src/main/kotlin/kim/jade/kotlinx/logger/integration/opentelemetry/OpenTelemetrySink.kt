@@ -17,7 +17,7 @@ class OpenTelemetrySink(private val otelLoggerProvider: io.opentelemetry.api.log
 
     override val key: LogPipe.Key<out LogPipe> = Key(otelLoggerProvider)
 
-    override fun apply(record: LogRecord): LogRecord {
+    override fun apply(record: LogRecord, next: (LogRecord) -> Unit) {
         val otelLogger = otelLoggerProvider.get(record.loggerName)
         val severity = record.level.toOTelSeverity()
         val context = Context.current()
@@ -37,7 +37,7 @@ class OpenTelemetrySink(private val otelLoggerProvider: io.opentelemetry.api.log
                 .emit()
         }
 
-        return record
+        next(record)
     }
 
     private fun LogLevel.toOTelSeverity(): Severity = when (this) {

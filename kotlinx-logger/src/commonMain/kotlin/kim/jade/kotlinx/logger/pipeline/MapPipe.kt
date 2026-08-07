@@ -8,5 +8,7 @@ class MapPipe(val transform: (LogRecord) -> LogRecord) : LogPipe {
 
     override val key: LogPipe.Key<out LogPipe> = Key
 
-    override fun apply(record: LogRecord): LogRecord = transform(record)
+    override fun apply(record: LogRecord, next: (LogRecord) -> Unit) {
+        next(transform(record))
+    }
 }

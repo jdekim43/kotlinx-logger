@@ -369,7 +369,7 @@ logger.error {
 
 ## Pipelines
 
-`LogPipeline` passes a record to each `LogPipe` in installation order. When a pipe returns a new record, the next stage receives it. Returning `null` stops the rest of the pipeline.
+`LogPipeline` starts each record at the first `LogPipe` in installation order. A pipe controls the rest of the pipeline through `apply(record, next)`: call `next(record)` to continue, call `next(transformedRecord)` to continue with a replacement, or do not call `next` to stop. Calling `next` more than once runs the downstream pipes once per call, which can be useful for deliberate fan-out; otherwise, call it at most once.
 
 ```kotlin
 Logger.pipeline = LogPipeline()
@@ -412,13 +412,18 @@ pipeline.clear()                         // Remove all pipes
 | `isInstalled(key)`         | Returns whether at least one pipe with the key is installed.                             |
 | `installIndexOf(key)`      | Returns the first installation index, or `-1` when absent.                              |
 | `clear()`                  | Removes all pipes.                                                                       |
-| `handle(record)`           | Processes a record from the beginning; normally called by `Logger.log`.                  |
+| `handle(record)`           | Starts processing a record from the beginning; normally called by `Logger.log`.          |
 | `clone()`                  | Creates a shallow copy of the pipeline that contains the same pipe instances.            |
+
+`handle(record)` captures the current pipe chain when processing starts. Pipeline changes affect later records, while a record already handed to an `AsyncPipe` continues through the downstream chain captured for that call. Since `AsyncPipe` resumes downstream processing asynchronously, `handle(record)` can return before those downstream pipes finish.
+
+`AsyncPipe` uses an unbounded FIFO queue by default; pass a channel capacity to its constructor to set a bound. A full bounded queue or a closed pipe rejects a new record. Call `close()` to stop accepting records while draining queued work, then `join()` to await completion. Call `cancel()` when queued work should be discarded. A downstream failure is reported to stderr and does not prevent later queued records from running; coroutine cancellation still stops the worker.
 
 ### Built-in pipes
 
 | Pipe                                                       | Purpose and options                                                                        |
 |------------------------------------------------------------|--------------------------------------------------------------------------------------------|
+| `AsyncPipe()`                                              | Resumes the remaining pipeline asynchronously.                                             |
 | `FilterPipe(predicate)`                                    | Passes only records for which the predicate returns `true`.                                |
 | `MapPipe(transform)`                                       | Transforms a record into another `LogRecord`.                                               |
 | `LoggerNameShortener(preferLength = 36)`                   | Shortens leading dot-separated name segments to one character; the target is not a strict maximum. |
@@ -426,6 +431,8 @@ pipeline.clear()                         // Remove all pipes
 | `StdOutSink(printStackTrace = true, useStdErr = false)` | Prints serialized messages to stdout or stderr; optional stack traces are printed to stderr. |
 
 `LoggerNameShortener` cannot be installed more than once with the same key and only transforms `LogRecordData` records.
+
+To format a record without running a pipeline, call `TextFormatter(...).format(record)`. When installed as a pipe, the formatter passes that result to `next`.
 
 The following example uses `MapPipe` to modify a record.
 
@@ -448,9 +455,9 @@ class SinkPipe(
 
     override val key: LogPipe.Key<out LogPipe> = Key
 
-    override fun apply(record: LogRecord): LogRecord? {
+    override fun apply(record: LogRecord, next: (LogRecord) -> Unit) {
         sink(record)
-        return record // Return null to stop subsequent pipes.
+        next(record) // Omit this call to stop the pipeline here.
     }
 }
 
@@ -460,7 +467,7 @@ Logger.pipeline.installBefore(
 )
 ```
 
-Override `LogPipe.installTo(pipeline, index)` to change a pipe's installation policy. The default implementation inserts it at the exact index. `apply(record)` is invoked by the pipeline and normally does not need to be called directly.
+Override `LogPipe.addTo(pipeline, index)` to change a pipe's installation policy. The default implementation replaces pipes with the same key, then inserts the new pipe at the requested position. `apply(record, next)` is invoked by the pipeline and normally does not need to be called directly.
 
 ## JVM JSON formatters
 
@@ -495,6 +502,8 @@ Logger.pipeline = LogPipeline()
 | `useCustomDateSerializer = false` | Serializes `Instant` as epoch milliseconds by default; set to `true` to use the supplied serializer configuration. |
 
 If Gson serialization fails, the formatter falls back to an error message and the `TextFormatter` result. Jackson serialization exceptions are propagated to the caller.
+
+Both JSON formatters expose `format(record)` when you need to serialize a record without running a pipeline.
 
 ## JVM logging interoperability
 

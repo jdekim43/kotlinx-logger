@@ -16,9 +16,10 @@ class SentrySink(
 
     override val key: LogPipe.Key<out LogPipe> = Key
 
-    override fun apply(record: LogRecord): LogRecord {
+    override fun apply(record: LogRecord, next: (LogRecord) -> Unit) {
         if (!isAcceptable(record)) {
-            return record
+            next(record)
+            return
         }
 
         val event = SentryEvent().apply {
@@ -34,7 +35,7 @@ class SentrySink(
         }
 
         Sentry.captureEvent(event)
-        return record
+        next(record)
     }
 
     private fun LogLevel.toSentryLevel(): SentryLevel =

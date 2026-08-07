@@ -17,7 +17,7 @@ class GsonFormatter(
     gson: Gson = Gson(),
     var traceLimit: Int = 12,
     useCustomDateSerializer: Boolean = false,
-) : kim.jade.kotlinx.logger.pipeline.LogPipe {
+) : LogPipe {
 
     companion object Key : LogPipe.Key<GsonFormatter>
 
@@ -35,12 +35,16 @@ class GsonFormatter(
 
     private val textFormatter = TextFormatter()
 
-    override fun apply(record: LogRecord): SerializedLog.String = try {
+    fun format(record: LogRecord): SerializedLog.String = try {
         SerializedLog.String(record, gson.toJson(record))
     } catch (e: Exception) {
-        val fallback = textFormatter.apply(record)
+        val fallback = textFormatter.format(record)
 
         SerializedLog.String(record, "ERROR: GsonFormatter failed: ${e.message}\n${fallback.serialized}")
+    }
+
+    override fun apply(record: LogRecord, next: (LogRecord) -> Unit) {
+        next(format(record))
     }
 
     private class InstantSerializer : JsonSerializer<Instant> {

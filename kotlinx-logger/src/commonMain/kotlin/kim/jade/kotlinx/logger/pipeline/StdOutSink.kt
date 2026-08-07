@@ -13,7 +13,7 @@ open class StdOutSink(
 
     override val key: LogPipe.Key<out LogPipe> = Key
 
-    override fun apply(record: LogRecord): LogRecord {
+    override fun apply(record: LogRecord, next: (LogRecord) -> Unit) {
         if (record is SerializedLog<*> && record.serialized is String) {
             if (useStdErr) {
                 eprintln(record.serialized)
@@ -28,6 +28,6 @@ open class StdOutSink(
             record.exception?.printStackTrace()
         }
 
-        return record
+        next(record)
     }
 }

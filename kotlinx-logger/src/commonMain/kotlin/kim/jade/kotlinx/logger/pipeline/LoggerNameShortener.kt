@@ -12,18 +12,20 @@ open class LoggerNameShortener(
 
     override val key: LogPipe.Key<out LogPipe> = Key
 
-    override fun installTo(pipeline: LogPipeline, index: Int) {
+    override fun addTo(pipeline: LogPipeline, index: Int) {
         if (pipeline.isInstalled(Key)) return
 
-        super.installTo(pipeline, index)
+        super.addTo(pipeline, index)
     }
 
-    override fun apply(record: LogRecord): LogRecord {
-        if (record is LogRecordData) {
-            return record.copy(loggerName = transform(record.loggerName))
-        }
+    override fun apply(record: LogRecord, next: (LogRecord) -> Unit) {
+        next(shorten(record))
+    }
 
-        return record
+    fun shorten(record: LogRecord): LogRecord = if (record is LogRecordData) {
+        record.copy(loggerName = transform(record.loggerName))
+    } else {
+        record
     }
 
     protected fun transform(name: String): String {

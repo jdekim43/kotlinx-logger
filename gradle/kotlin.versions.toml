@@ -13,3 +13,4 @@ dokka = { module = "org.jetbrains.dokka:org.jetbrains.dokka.gradle.plugin", vers
 dokka-javadoc = { module = "org.jetbrains.dokka:javadoc-plugin", version.ref = "dokka" }
 ktor-server-core = { module = "io.ktor:ktor-server-core", version.ref = "ktor" }
 ktor-server-callId = { module = "io.ktor:ktor-server-call-id", version.ref = "ktor" }
+ktor-server-test-host = { module = "io.ktor:ktor-server-test-host", version.ref = "ktor" }

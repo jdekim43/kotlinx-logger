@@ -4,18 +4,33 @@ import kim.jade.kotlinx.thread.ThreadLocal
 
 object ThreadLogContext : MutableLogContext {
 
-    internal val threadLocal = ThreadLocal<MutableLogContext>()
+    typealias MutableContextStack = MutableMap<String, MutableList<Any?>>
+
+    internal val threadLocalData = ThreadLocal<MutableLogContext>()
+    internal val threadLocalStack = ThreadLocal<MutableContextStack>()
 
     private val data: MutableLogContext
         get() {
-            var data: MutableLogContext? = threadLocal.get()
+            var data: MutableLogContext? = threadLocalData.get()
 
             if (data == null) {
                 data = MutableLogContext()
-                threadLocal.set(data)
+                threadLocalData.set(data)
             }
 
             return data
+        }
+
+    private val stack: MutableContextStack
+        get() {
+            var stack: MutableContextStack? = threadLocalStack.get()
+
+            if (stack == null) {
+                stack = mutableMapOf()
+                threadLocalStack.set(stack)
+            }
+
+            return stack
         }
 
     override val entries: MutableSet<MutableMap.MutableEntry<String, Any?>>
@@ -45,4 +60,34 @@ object ThreadLogContext : MutableLogContext {
     override fun putAll(from: Map<out String, Any?>) = data.putAll(from)
 
     override fun remove(key: String): Any? = data.remove(key)
+
+    fun push(key: String, value: Any?) {
+        stack.getOrPut(key) { mutableListOf() }.add(value)
+    }
+
+    fun pop(key: String): Any? {
+        val values = stack[key] ?: return null
+        if (values.isEmpty()) {
+            clearStack(key)
+            return null
+        }
+
+        val value = values.removeLast()
+
+        if (values.isEmpty()) {
+            clearStack(key)
+        }
+
+        return value
+    }
+
+    fun copyAllInStack(): MutableContextStack = stack.deepCopy()
+
+    fun copyAllInStack(key: String): MutableList<Any?>? = stack[key]?.toMutableList()
+
+    fun clearStack(key: String) {
+        stack.remove(key)
+    }
+
+    fun MutableContextStack.deepCopy(): MutableContextStack = mapValues { it.value.toMutableList() }.toMutableMap()
 }

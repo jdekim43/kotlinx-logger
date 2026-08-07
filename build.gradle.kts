@@ -120,3 +120,56 @@ tasks.register("publish") {
         dependsOn(publishTask)
     }
 }
+
+val moduleJvmTests = listOf(
+    ":kotlinx-logger:jvmTest",
+    ":kotlinx-logger-integration-gson:test",
+    ":kotlinx-logger-integration-jackson:test",
+    ":kotlinx-logger-integration-jvm:test",
+    ":kotlinx-logger-integration-koin:jvmTest",
+    ":kotlinx-logger-integration-ktor:jvmTest",
+    ":kotlinx-logger-integration-okhttp:test",
+    ":kotlinx-logger-integration-opentelemetry:test",
+    ":kotlinx-logger-integration-sentry:test",
+)
+
+val allJvmTests = tasks.register("allJvmTests") {
+    group = "verification"
+    description = "Runs the JVM Kotest suite for every library module."
+    dependsOn(moduleJvmTests)
+}
+
+val commonTestModules = listOf(
+    ":kotlinx-logger",
+    ":kotlinx-logger-integration-koin",
+)
+
+val hostNativeTest = when {
+    System.getProperty("os.name").startsWith("Mac") &&
+        System.getProperty("os.arch") in setOf("aarch64", "arm64") -> "macosArm64Test"
+    System.getProperty("os.name").startsWith("Linux") &&
+        System.getProperty("os.arch") in setOf("amd64", "x86_64") -> "linuxX64Test"
+    System.getProperty("os.name").startsWith("Windows") &&
+        System.getProperty("os.arch") in setOf("amd64", "x86_64") -> "mingwX64Test"
+    else -> null
+}
+
+val moduleMultiplatformTests = commonTestModules.flatMap { module ->
+    buildList {
+        add("$module:jsBrowserTest")
+        add("$module:jsNodeTest")
+        add("$module:testAndroidHostTest")
+        hostNativeTest?.let { add("$module:$it") }
+    }
+}
+
+val multiplatformTests = tasks.register("multiplatformTests") {
+    group = "verification"
+    description = "Runs JVM-only tests and common tests on JS, Android, and the current native host."
+    dependsOn(allJvmTests)
+    dependsOn(moduleMultiplatformTests)
+}
+
+tasks.named("check") {
+    dependsOn(multiplatformTests)
+}
