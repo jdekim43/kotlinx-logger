@@ -11,5 +11,9 @@ kotlin {
             api(kt.ktor.server.core)
             api(kt.ktor.server.callId)
         }
+
+        jvmTest.dependencies {
+            implementation(kt.ktor.server.test.host)
+        }
     }
 }

@@ -11,3 +11,9 @@ dependencies {
     api(libs.jackson.databind)
     api(libs.jackson.kotlin)
 }
+
+tasks.withType<Test>().configureEach {
+    javaLauncher.set(javaToolchains.launcherFor {
+        languageVersion.set(JavaLanguageVersion.of(21))
+    })
+}

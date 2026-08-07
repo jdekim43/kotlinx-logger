@@ -4,7 +4,7 @@ import kim.jade.kotlinx.thread.ThreadLocal
 
 object ThreadLogContext : MutableLogContext {
 
-    typealias MutableContextStack = MutableMap<String, MutableList<Any?>>
+    typealias MutableContextStack = MutableMap<String, MutableList<Any>>
 
     internal val threadLocalData = ThreadLocal<MutableLogContext>()
     internal val threadLocalStack = ThreadLocal<MutableContextStack>()
@@ -61,7 +61,7 @@ object ThreadLogContext : MutableLogContext {
 
     override fun remove(key: String): Any? = data.remove(key)
 
-    fun push(key: String, value: Any?) {
+    fun push(key: String, value: Any) {
         stack.getOrPut(key) { mutableListOf() }.add(value)
     }
 
