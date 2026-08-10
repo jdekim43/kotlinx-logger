@@ -72,7 +72,7 @@ object ThreadLogContext : MutableLogContext {
             return null
         }
 
-        val value = values.removeLast()
+        val value = values.removeAt(values.size - 1)
 
         if (values.isEmpty()) {
             clearStack(key)
