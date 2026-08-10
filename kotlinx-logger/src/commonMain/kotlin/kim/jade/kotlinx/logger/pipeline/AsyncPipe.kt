@@ -1,6 +1,5 @@
 package kim.jade.kotlinx.logger.pipeline
 
-import kim.jade.kotlinx.io.eprintln
 import kim.jade.kotlinx.logger.LogRecord
 import kotlinx.coroutines.*
 import kotlinx.coroutines.channels.Channel
@@ -51,7 +50,7 @@ class AsyncPipe(
                     } catch (e: CancellationException) {
                         throw e
                     } catch (e: Exception) {
-                        eprintln("ERROR: AsyncPipe: An error occurred. Some logs may have been dropped.\n${e.message}")
+                        println("ERROR: AsyncPipe: An error occurred. Some logs may have been dropped.\n${e.stackTraceToString()}")
                     }
                 }
             } finally {
