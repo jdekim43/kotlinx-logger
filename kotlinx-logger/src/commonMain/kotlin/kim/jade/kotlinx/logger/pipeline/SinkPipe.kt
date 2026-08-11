@@ -2,9 +2,9 @@ package kim.jade.kotlinx.logger.pipeline
 
 import kim.jade.kotlinx.logger.LogRecord
 
-class MapPipe(val transform: (LogRecord) -> LogRecord) : LogPipe {
+class SinkPipe(val body: (LogRecord) -> Unit) : LogPipe {
 
-    companion object Key : LogPipe.Key<MapPipe>
+    companion object Key : LogPipe.Key<SinkPipe>
 
     override val key: LogPipe.Key<out LogPipe> = Key
 
@@ -13,6 +13,7 @@ class MapPipe(val transform: (LogRecord) -> LogRecord) : LogPipe {
     }
 
     override fun apply(record: LogRecord, next: (LogRecord) -> Unit) {
-        next(transform(record))
+        body(record)
+        next(record)
     }
 }
