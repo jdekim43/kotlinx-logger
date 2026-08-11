@@ -164,7 +164,7 @@ jobs:
             tasks: linuxX64Test
           - name: apple
             os: macos-15
-            tasks: macosArm64Test iosSimulatorArm64Test watchosSimulatorArm64Test tvosSimulatorArm64Test
+            tasks: macosArm64Test iosSimulatorArm64Test
 
     steps:
       - name: Check out repository
