@@ -12,7 +12,9 @@ import kim.jade.kotlinx.logger.pipeline.LoggerNameShortener
 import kim.jade.kotlinx.logger.pipeline.StdOutSink
 import kim.jade.kotlinx.logger.pipeline.TextFormatter
 import kotlin.concurrent.atomics.AtomicBoolean
+import kotlin.concurrent.atomics.AtomicInt
 import kotlin.concurrent.atomics.ExperimentalAtomicApi
+import kotlin.concurrent.atomics.incrementAndFetch
 import kotlin.reflect.KClass
 import kotlin.reflect.KProperty
 
@@ -28,22 +30,47 @@ private fun initLogger() {
     }
 }
 
-open class Logger(val name: String, level: LogLevel? = null, pipeline: LogPipeline? = null) {
+open class Logger(
+    val name: String,
+    level: LogLevel? = null,
+    pipeline: LogPipeline? = null,
+    parent: Logger? = null,
+) {
 
     companion object {
 
+        /** Name of the logger every other logger ultimately inherits from. */
+        const val ROOT_LOGGER_NAME: String = ""
+
+        /** Separates the segments of a logger name. */
+        const val NAME_SEPARATOR: Char = '.'
+
+        private const val MAX_HIERARCHY_DEPTH: Int = 1000
+
         var defaultLoggerName: String = "default"
 
-        var level: LogLevel = LogLevel.INFO
+        var defaultLevel: LogLevel = LogLevel.INFO
+            set(value) {
+                field = value
+                ConfigurationSnapshot.invalidate()
+            }
 
-        var pipeline: LogPipeline = LogPipeline()
+        var defaultPipeline: LogPipeline = LogPipeline()
             .install(LoggerNameShortener())
             .install(TextFormatter())
             .install(StdOutSink())
+            set(value) {
+                field = value
+                ConfigurationSnapshot.invalidate()
+            }
+
+        val root: Logger
 
         private val loggers = SharedHashMap<String, Logger>()
 
         init {
+            root = named(ROOT_LOGGER_NAME)
+
             initLogger()
         }
 
@@ -64,6 +91,16 @@ open class Logger(val name: String, level: LogLevel? = null, pipeline: LogPipeli
         fun typed(klass: KClass<*>): Logger = named(klass.qualifiedOrSimpleName ?: defaultLoggerName)
 
         inline fun <reified T> typed(): Logger = typed(T::class)
+
+        fun configure(name: String, block: Logger.() -> Unit): Logger = named(name).apply(block)
+
+        fun resetAllConfiguration() {
+            loggers.values.forEach { it.resetConfiguration() }
+
+            ConfigurationSnapshot.invalidate()
+        }
+
+        private fun registered(name: String): Logger? = loggers[name]
     }
 
     class LogProperties {
@@ -77,26 +114,115 @@ open class Logger(val name: String, level: LogLevel? = null, pipeline: LogPipeli
         }
     }
 
-    private var _level: LogLevel? = level
-    var level: LogLevel
-        get() = _level ?: Logger.level
-        set(value) {
-            _level = value
+    internal class ConfigurationSnapshot(
+        val generation: Int,
+        val parent: Logger?,
+        val level: LogLevel,
+        val pipeline: LogPipeline,
+    ) {
+
+        @OptIn(ExperimentalAtomicApi::class)
+        companion object {
+
+            private val generation = AtomicInt(0)
+
+            fun current(): Int = generation.load()
+
+            fun invalidate() {
+                generation.incrementAndFetch()
+            }
+        }
+    }
+
+    private var configuredParent: Logger? = parent
+    private var configuredLevel: LogLevel? = level
+    private var configuredPipeline: LogPipeline? = pipeline
+    private var configurePipelineFromParent: (LogPipeline.() -> Unit)? = null
+
+    private var resolved: ConfigurationSnapshot? = null
+    private val configuration: ConfigurationSnapshot
+        get() {
+            val generation = ConfigurationSnapshot.current()
+            val cached = resolved
+            if (cached != null && cached.generation == generation) {
+                return cached
+            }
+
+            val parent = configuredParent ?: resolveParent()
+
+            return ConfigurationSnapshot(
+                generation = generation,
+                parent = parent,
+                level = configuredLevel ?: parent?.level ?: defaultLevel,
+                pipeline = configuredPipeline ?: (parent?.pipeline ?: defaultPipeline).inherited(),
+            ).also { resolved = it }
         }
 
-    private var _pipeline: LogPipeline? = pipeline
-    var pipeline: LogPipeline
-        get() = _pipeline ?: Logger.pipeline
+    var parent: Logger?
+        get() = configuration.parent
         set(value) {
-            _pipeline = value
+            var ancestor: Logger? = value
+            var depth = 0
+            while (ancestor != null && depth++ < MAX_HIERARCHY_DEPTH) {
+                require(ancestor !== this) { "'$name' cannot be a descendant of itself" }
+                ancestor = ancestor.run { configuredParent ?: resolveParent() }
+            }
+
+            configuredParent = value
+            ConfigurationSnapshot.invalidate()
         }
+
+    var level: LogLevel
+        get() = configuration.level
+        set(value) {
+            configuredLevel = value
+            ConfigurationSnapshot.invalidate()
+        }
+
+    var pipeline: LogPipeline
+        get() = configuration.pipeline
+        set(value) {
+            configuredPipeline = value
+            ConfigurationSnapshot.invalidate()
+        }
+
+    fun configurePipelineFromParent(configure: LogPipeline.() -> Unit) {
+        configurePipelineFromParent = configure
+        ConfigurationSnapshot.invalidate()
+    }
+
+    fun useParentLevel() {
+        configuredLevel = null
+        ConfigurationSnapshot.invalidate()
+    }
+
+    fun useParentPipeline() {
+        configuredPipeline = null
+        configurePipelineFromParent = null
+        ConfigurationSnapshot.invalidate()
+    }
+
+    fun resetParent() {
+        configuredParent = null
+        ConfigurationSnapshot.invalidate()
+    }
+
+    fun resetConfiguration() {
+        configuredParent = null
+        configuredLevel = null
+        configuredPipeline = null
+        configurePipelineFromParent = null
+        ConfigurationSnapshot.invalidate()
+    }
 
     fun log(record: LogRecord) {
-        if (!record.isPrintableAt(level)) {
+        val configuration = configuration
+
+        if (!record.isPrintableAt(configuration.level)) {
             return
         }
 
-        pipeline.handle(record)
+        configuration.pipeline.handle(record)
     }
 
     fun log(
@@ -223,5 +349,29 @@ open class Logger(val name: String, level: LogLevel? = null, pipeline: LogPipeli
 
     inline fun trace(body: LogProperties.() -> String) {
         log(LogLevel.TRACE, body)
+    }
+
+    private fun resolveParent(): Logger? {
+        if (name == ROOT_LOGGER_NAME) {
+            return null
+        }
+
+        var cut = name.length
+        while (cut > 0) {
+            cut = name.lastIndexOf(NAME_SEPARATOR, cut - 1)
+            if (cut <= 0) {
+                break
+            }
+
+            registered(name.substring(0, cut))?.let { return it }
+        }
+
+        return root
+    }
+
+    private fun LogPipeline.inherited(): LogPipeline {
+        val configure = configurePipelineFromParent ?: return this
+
+        return clone().also { it.silently(configure) }
     }
 }

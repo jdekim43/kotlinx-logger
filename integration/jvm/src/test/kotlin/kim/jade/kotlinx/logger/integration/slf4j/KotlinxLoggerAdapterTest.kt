@@ -96,8 +96,6 @@ class KotlinxLoggerAdapterTest : FunSpec({
         test("SLF4J LoggerFactory discovers the provider and logs through the kotlinx bridge") {
             val name = "slf4j.facade.smoke"
             val kotlinxLogger = Logger.named(name)
-            val originalLevel = kotlinxLogger.level
-            val originalPipeline = kotlinxLogger.pipeline
 
             try {
                 kotlinxLogger.level = LogLevel.TRACE
@@ -112,8 +110,7 @@ class KotlinxLoggerAdapterTest : FunSpec({
                     body shouldBe "facade works"
                 }
             } finally {
-                kotlinxLogger.level = originalLevel
-                kotlinxLogger.pipeline = originalPipeline
+                kotlinxLogger.resetConfiguration()
             }
         }
     }

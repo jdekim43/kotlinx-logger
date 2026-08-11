@@ -28,6 +28,34 @@ class LoggerJvmTest : FunSpec({
         }
     }
 
+    context("hierarchical configuration under concurrency") {
+        test("readers converge on the last write and never fail") {
+            val ancestor = Logger.configure("hier-concurrent.a") { level = LogLevel.WARNING }
+            val readers = (0 until 4).map { reader ->
+                Logger.named("hier-concurrent.a.b.c.reader$reader")
+            }
+
+            try {
+                coroutineScope {
+                    val writer = async(Dispatchers.Default) {
+                        repeat(500) { ancestor.level = if (it % 2 == 0) LogLevel.TRACE else LogLevel.DEBUG }
+                        ancestor.level = LogLevel.ERROR
+                    }
+                    val reads = readers.map { logger ->
+                        async(Dispatchers.Default) { List(500) { logger.level } }
+                    }
+
+                    writer.await()
+                    reads.forEach { it.await() }
+                }
+
+                readers.forEach { it.level shouldBe LogLevel.ERROR }
+            } finally {
+                Logger.resetAllConfiguration()
+            }
+        }
+    }
+
     context("CoroutineThreadLogContext") {
         lateinit var savedMap: Map<String, Any?>
         var savedStack: List<Any?>? = null

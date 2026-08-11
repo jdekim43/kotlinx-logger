@@ -104,8 +104,6 @@ class OTelKotlinxLogRecordBuilderTest : FunSpec({
             val logger = OTelKotlinxLogger("otel.emit.test")
             val capture = OTelCapturingPipe()
             val kotlinxLogger = logger.kotlinxLogger
-            val originalLevel = kotlinxLogger.level
-            val originalPipeline = kotlinxLogger.pipeline
 
             try {
                 kotlinxLogger.level = LogLevel.TRACE
@@ -123,8 +121,7 @@ class OTelKotlinxLogRecordBuilderTest : FunSpec({
                     body shouldBe "emitted"
                 }
             } finally {
-                kotlinxLogger.level = originalLevel
-                kotlinxLogger.pipeline = originalPipeline
+                kotlinxLogger.resetConfiguration()
             }
         }
     }

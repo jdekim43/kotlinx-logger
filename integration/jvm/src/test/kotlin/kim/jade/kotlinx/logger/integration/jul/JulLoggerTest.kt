@@ -23,16 +23,16 @@ class JulLoggerTest : FunSpec({
     lateinit var capture: JulCapturingPipe
 
     beforeTest {
-        originalPipeline = Logger.pipeline
-        originalLevel = Logger.level
+        originalPipeline = Logger.defaultPipeline
+        originalLevel = Logger.defaultLevel
         capture = JulCapturingPipe()
-        Logger.level = LogLevel.TRACE
-        Logger.pipeline = LogPipeline().install(capture)
+        Logger.defaultLevel = LogLevel.TRACE
+        Logger.defaultPipeline = LogPipeline().install(capture)
     }
 
     afterTest {
-        Logger.pipeline = originalPipeline
-        Logger.level = originalLevel
+        Logger.defaultPipeline = originalPipeline
+        Logger.defaultLevel = originalLevel
     }
 
     context("record translation") {

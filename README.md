@@ -4,7 +4,7 @@
 [![Kotlin](https://img.shields.io/badge/Kotlin-2.4.10-blue.svg)](https://kotlinlang.org/)
 [![Maven Central](https://img.shields.io/maven-central/v/kim.jade/kotlinx-logger.svg)](https://central.sonatype.com/artifact/kim.jade/kotlinx-logger)
 
-`kotlinx-logger` is a Kotlin Multiplatform logging library. It supports global, thread-local, and coroutine contexts, lazy message evaluation, and customizable pipelines. The JVM integration module also provides interoperability with JUL and SLF4J.
+`kotlinx-logger` is a Kotlin Multiplatform logging library. It supports global, thread-local, and coroutine contexts, lazy message evaluation, customizable pipelines, and hierarchical per-logger configuration driven by dotted logger names. The JVM integration module also provides interoperability with JUL and SLF4J.
 
 ## Features
 
@@ -12,6 +12,7 @@
 - Global (`GlobalLogContext`), thread-local (`ThreadLogContext`), and coroutine (`CoroutineLogContext`) contexts
 - A lazy logging DSL that avoids constructing messages before level filtering
 - A composable `LogPipeline` for filtering, transforming, formatting, and emitting records
+- [Hierarchical configuration](#hierarchical-configuration): levels and pipelines inherited along dotted logger names, so a whole package can be configured at startup
 - Text formatting plus Gson and Jackson JSON formatters for the JVM
 - Integrations for Koin, Ktor, OkHttp, OpenTelemetry, and Sentry
 - A JUL handler and an SLF4J 2 provider
@@ -113,9 +114,13 @@ val byType = Logger.typed<PaymentService>()
 val byJavaClass = Logger.typed(PaymentService::class.java)
 ```
 
-`named(name)` caches instances by name, so calls with the same name return the same `Logger`. The Kotlin `typed` variants use the qualified name and then the simple name, while the JVM `Class` overload uses the canonical name. They fall back to `Logger.defaultLoggerName` when no name is available.
+`named(name)` caches instances by name, so calls with the same name return the same logger. The Kotlin `typed` variants use the qualified name and then the simple name, while the JVM `Class` overload uses the canonical name. They fall back to `Logger.defaultLoggerName` when no name is available.
 
-Call the constructor directly when you need an independent, uncached logger.
+Registered loggers inherit their level and pipeline along the dotted segments of their name — see
+[Hierarchical configuration](#hierarchical-configuration).
+
+Call the constructor directly when you need an uncached logger. It still inherits from registered ancestors, but
+is not itself registered, so it never becomes anyone's ancestor.
 
 ```kotlin
 val auditLogger = Logger(
@@ -148,6 +153,51 @@ private val topLevelLogger by Logger // Logger.defaultLoggerName
 | `Logger.lazy(name)`                 | Creates a `Lazy<Logger>` that calls `named(name)` on first access.      |
 | `Logger.lazy(KClass)` / `lazy<T>()` | Creates a type-based logger on first access.                            |
 | `by Logger`                         | Uses the owning class name for members and the default name at top level. |
+
+### Hierarchical configuration
+
+Logger names form a hierarchy split on `.`, the way `java.util.logging` treats packages. A logger that declares
+neither a level nor a pipeline inherits them from the nearest **registered** ancestor, ending at `Logger.root`,
+which falls back to `Logger.defaultLevel` and `Logger.defaultPipeline`.
+
+```kotlin
+Logger.defaultLevel = LogLevel.INFO
+Logger.configure("com.example.payment") { level = LogLevel.DEBUG }
+
+Logger.named("com.example.payment.CardService").level   // DEBUG, inherited
+Logger.named("com.example.order.OrderService").level    // INFO, from the default
+```
+
+`Logger.configure(name) { }` creates and registers the logger if it does not exist yet, so a whole package can be
+configured at startup before any of its loggers has been touched.
+
+| Member                             | Meaning                                                                     |
+|------------------------------------|------------------------------------------------------------------------------|
+| `level` / `pipeline`               | Reading gives the effective value; assigning pins it on this logger.         |
+| `parent`                           | Reading gives the nearest ancestor, `null` for `Logger.root`; assigning declares one explicitly, ignoring the name. |
+| `configurePipelineFromParent { }`  | Adds pipes around the inherited pipeline without touching the ancestor.      |
+| `useParentLevel()` / `useParentPipeline()` | Go back to inheriting that one setting from the parent.      |
+| `resetParent()`                    | Goes back to deriving the parent from the name.                              |
+| `resetConfiguration()`             | Goes back to inheriting everything.                                          |
+
+Until `configurePipelineFromParent` is used the inherited pipeline is shared by reference, so installing a pipe on
+an ancestor is visible immediately and costs no copy. Once a block is set, the logger works on its own copy; the
+block is re-applied whenever the hierarchy changes, so keep it idempotent.
+
+```kotlin
+Logger.configure("com.example.payment") {
+    configurePipelineFromParent { installBefore(FilterPipe { it.meta["pii"] != true }, TextFormatter) }
+}
+```
+
+Two things do not take part in the hierarchy. A logger built with the constructor is not registered, so it
+inherits but never becomes anyone's ancestor. And on Kotlin/JS `Logger.typed()` yields a simple class name rather
+than a qualified one, so package-based inheritance is unavailable there — use
+`Logger.named("com.example.CardService")` or an explicit `parent` instead.
+
+`Logger.resetAllConfiguration()` drops every explicit configuration and is intended for test isolation. It leaves
+`defaultLevel` and `defaultPipeline` alone, since on Android the default pipeline carries the sink installed
+during platform bootstrap.
 
 ## Logging
 
@@ -379,7 +429,7 @@ logger.error {
 `LogPipeline` starts each record at the first `LogPipe` in installation order. A pipe controls the rest of the pipeline through `apply(record, next)`: call `next(record)` to continue, call `next(transformedRecord)` to continue with a replacement, or do not call `next` to stop. Calling `next` more than once runs the downstream pipes once per call, which can be useful for deliberate fan-out; otherwise, call it at most once.
 
 ```kotlin
-Logger.pipeline = LogPipeline()
+Logger.defaultPipeline = LogPipeline()
     .install(FilterPipe { record -> record.context["healthCheck"] != true })
     .install(LoggerNameShortener(preferLength = 30))
     .install(TextFormatter(printMeta = true, enableColor = true))
@@ -468,7 +518,7 @@ class SinkPipe(
     }
 }
 
-Logger.pipeline.installBefore(
+Logger.defaultPipeline.installBefore(
     SinkPipe { record -> println("custom sink: ${record.body}") },
     TextFormatter,
 )
@@ -485,7 +535,7 @@ The Gson and Jackson formatters are provided by separate JVM integration modules
 ```kotlin
 import kim.jade.kotlinx.logger.integration.gson.GsonFormatter
 
-Logger.pipeline = LogPipeline()
+Logger.defaultPipeline = LogPipeline()
     .install(LoggerNameShortener())
     .install(GsonFormatter(traceLimit = 12))
     .install(StdOutSink(printStackTrace = false))
@@ -496,7 +546,7 @@ Logger.pipeline = LogPipeline()
 ```kotlin
 import kim.jade.kotlinx.logger.integration.jackson.JacksonFormatter
 
-Logger.pipeline = LogPipeline()
+Logger.defaultPipeline = LogPipeline()
     .install(LoggerNameShortener())
     .install(JacksonFormatter(traceLimit = 12))
     .install(StdOutSink(printStackTrace = false))
@@ -644,7 +694,7 @@ import kim.jade.kotlinx.logger.integration.okhttp.OkHttpLogInterceptorFactory
 import okhttp3.OkHttpClient
 import okhttp3.logging.HttpLoggingInterceptor
 
-Logger.level = LogLevel.DEBUG
+Logger.defaultLevel = LogLevel.DEBUG
 
 val client = OkHttpClient.Builder()
     .addInterceptor(
@@ -708,7 +758,7 @@ Sentry.init { options ->
     options.dsn = System.getenv("SENTRY_DSN")
 }
 
-Logger.pipeline.install(SentrySink())
+Logger.defaultPipeline.install(SentrySink())
 ```
 
 By default, `SentrySink` forwards records at `WARNING` or a more severe level. Pass a custom `isAcceptable` predicate to change the threshold.
@@ -726,7 +776,7 @@ import kim.jade.kotlinx.logger.integration.opentelemetry.OpenTelemetrySink
 
 //val openTelemetry = ...
 
-Logger.pipeline.install(OpenTelemetrySink(openTelemetry))
+Logger.defaultPipeline.install(OpenTelemetrySink(openTelemetry))
 ```
 
 `OpenTelemetrySink` forwards the logger name, severity, timestamps, body, exception, and event name. The current implementation does not map `LogRecord.meta` or `LogRecord.context` to OpenTelemetry attributes.
