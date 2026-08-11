@@ -2,8 +2,10 @@ name: Publish to Maven Central
 
 on:
   push:
-    tags:
-      - "v*"
+    branches:
+      - main
+    paths:
+      - gradle.properties
 
 permissions:
   contents: write
@@ -12,11 +14,17 @@ concurrency:
   group: maven-central-publish
   cancel-in-progress: false
 
+env:
+  GRADLE_ARGS: --no-daemon --stacktrace
+
 jobs:
-  publish:
-    name: Publish ${{ github.ref_name }}
+  prepare:
+    name: Resolve release
     runs-on: ubuntu-24.04
-    timeout-minutes: 90
+    timeout-minutes: 5
+    outputs:
+      release_version: ${{ steps.version.outputs.release_version }}
+      should_release: ${{ steps.version.outputs.should_release }}
 
     steps:
       - name: Check out repository
@@ -28,31 +36,41 @@ jobs:
       - name: Resolve release version
         id: version
         shell: bash
+        env:
+          PREVIOUS_SHA: ${{ github.event.before }}
         run: |
           set -euo pipefail
 
-          release_version="${GITHUB_REF_NAME#v}"
+          extract_release_version() {
+            sed -n 's/^releaseVersion=[[:space:]]*//p' | tail -n 1
+          }
+
+          release_version="$(extract_release_version < gradle.properties)"
+          if [[ -z "$release_version" ]]; then
+            echo "releaseVersion is not declared in gradle.properties." >&2
+            exit 1
+          fi
           if [[ ! "$release_version" =~ ^[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z][0-9A-Za-z.-]*)?$ ]]; then
-            echo "Expected a semantic version tag such as v1.0.0 or v1.0.0-beta1, got: $GITHUB_REF_NAME" >&2
+            echo "Expected a semantic version such as 1.0.0 or 1.0.0-beta1, got: $release_version" >&2
             exit 1
           fi
 
           echo "release_version=$release_version" >> "$GITHUB_OUTPUT"
 
-      - name: Set up Java
-        uses: actions/setup-java@v5
-        with:
-          distribution: temurin
-          java-version: |
-            11
-            21
+          previous_version="$(
+            { git show "$PREVIOUS_SHA:gradle.properties" 2>/dev/null || true; } | extract_release_version
+          )"
 
-      - name: Set up Gradle
-        uses: gradle/actions/setup-gradle@v6
-        with:
-          cache-provider: basic
+          if [[ "$release_version" == "$previous_version" ]]; then
+            echo "releaseVersion is unchanged at $release_version; skipping the release."
+            echo "should_release=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "releaseVersion changed from ${previous_version:-<none>} to $release_version."
+            echo "should_release=true" >> "$GITHUB_OUTPUT"
+          fi
 
       - name: Validate release secrets
+        if: steps.version.outputs.should_release == 'true'
         shell: bash
         env:
           MAVEN_CENTRAL_USERNAME: ${{ secrets.MAVEN_CENTRAL_USERNAME }}
@@ -76,11 +94,175 @@ jobs:
             fi
           done
 
-      - name: Check
-        run: ./gradlew clean check -PreleaseVersion="${{ steps.version.outputs.release_version }}" --no-daemon --stacktrace
+  build:
+    name: Build and stage publications
+    needs: prepare
+    if: needs.prepare.outputs.should_release == 'true'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+
+      - name: Set up Java
+        uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: |
+            11
+            21
+
+      - name: Cache Kotlin/Native distribution
+        uses: actions/cache@v4
+        with:
+          path: ~/.konan
+          key: konan-${{ runner.os }}-${{ hashFiles('gradle/kotlin.versions.toml') }}
+          restore-keys: |
+            konan-${{ runner.os }}-
+
+      - name: Set up Gradle
+        uses: gradle/actions/setup-gradle@v6
+        with:
+          cache-provider: basic
 
       - name: Stage Maven publications
-        run: ./gradlew publish -PreleaseVersion="${{ steps.version.outputs.release_version }}" --no-daemon --stacktrace
+        run: ./gradlew publish $GRADLE_ARGS
+
+      - name: Upload staged publications
+        uses: actions/upload-artifact@v4
+        with:
+          name: staging-deploy
+          path: |
+            kotlinx/build/staging-deploy
+            encoding/build/staging-deploy
+            security/build/staging-deploy
+          if-no-files-found: error
+          retention-days: 1
+
+  test:
+    name: Test (${{ matrix.name }})
+    needs: prepare
+    if: needs.prepare.outputs.should_release == 'true'
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 60
+
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: jvm
+            os: ubuntu-24.04
+            tasks: jvmTest
+          - name: js
+            os: ubuntu-24.04
+            tasks: jsNodeTest jsBrowserTest
+          - name: linuxX64
+            os: ubuntu-24.04
+            tasks: linuxX64Test
+          - name: apple
+            os: macos-15
+            tasks: macosArm64Test iosSimulatorArm64Test watchosSimulatorArm64Test tvosSimulatorArm64Test
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+
+      - name: Set up Java
+        uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: |
+            11
+            21
+
+      - name: Cache Kotlin/Native distribution
+        uses: actions/cache@v4
+        with:
+          path: ~/.konan
+          key: konan-${{ runner.os }}-${{ hashFiles('gradle/kotlin.versions.toml') }}
+          restore-keys: |
+            konan-${{ runner.os }}-
+
+      - name: Set up Gradle
+        uses: gradle/actions/setup-gradle@v6
+        with:
+          cache-provider: basic
+
+      - name: Run ${{ matrix.name }} tests
+        run: ./gradlew ${{ matrix.tasks }} $GRADLE_ARGS
+
+      - name: Upload test reports
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: test-reports-${{ matrix.name }}
+          path: |
+            **/build/reports/tests
+            **/build/test-results
+          if-no-files-found: ignore
+          retention-days: 7
+
+  deploy:
+    name: Deploy ${{ needs.prepare.outputs.release_version }}
+    needs:
+      - prepare
+      - build
+      - test
+    if: needs.prepare.outputs.should_release == 'true'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Configure git identity for the release tag
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+
+      - name: Set up Java
+        uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: |
+            11
+            21
+
+      - name: Set up Gradle
+        uses: gradle/actions/setup-gradle@v6
+        with:
+          cache-provider: basic
+
+      - name: Download staged publications
+        uses: actions/download-artifact@v4
+        with:
+          name: staging-deploy
+
+      - name: Verify staged publications
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          for module_directory in kotlinx encoding security
+          do
+            staging_directory="$module_directory/build/staging-deploy"
+            if [[ -z "$(find "$staging_directory" -name '*.pom' -print -quit 2>/dev/null)" ]]; then
+              echo "No staged artifacts found in $staging_directory" >&2
+              exit 1
+            fi
+          done
 
       - name: Prepare signing keys
         id: signing
@@ -101,7 +283,7 @@ jobs:
           echo "public_key=$key_directory/public.asc" >> "$GITHUB_OUTPUT"
           echo "secret_key=$key_directory/secret.asc" >> "$GITHUB_OUTPUT"
 
-      - name: Publish and create GitHub release
+      - name: Publish, tag and create GitHub release
         env:
           JRELEASER_GITHUB_TOKEN: ${{ github.token }}
           JRELEASER_MAVENCENTRAL_RELEASE_USERNAME: ${{ secrets.MAVEN_CENTRAL_USERNAME }}
@@ -109,9 +291,20 @@ jobs:
           JRELEASER_GPG_PUBLIC_KEY: ${{ steps.signing.outputs.public_key }}
           JRELEASER_GPG_SECRET_KEY: ${{ steps.signing.outputs.secret_key }}
           JRELEASER_GPG_PASSPHRASE: ${{ secrets.GPG_PASSPHRASE }}
-        run: ./gradlew jreleaserFullRelease -PreleaseVersion="${{ steps.version.outputs.release_version }}" --no-daemon --stacktrace
+        run: ./gradlew jreleaserFullRelease $GRADLE_ARGS
 
       - name: Remove signing keys
         if: always()
         shell: bash
         run: rm -f "$RUNNER_TEMP/jreleaser-keys/public.asc" "$RUNNER_TEMP/jreleaser-keys/secret.asc"
+
+      - name: Upload JReleaser logs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: jreleaser-output
+          path: |
+            build/jreleaser/trace.log
+            build/jreleaser/output.properties
+          if-no-files-found: ignore
+          retention-days: 7

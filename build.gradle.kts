@@ -74,6 +74,7 @@ jreleaser {
                 create("release") {
                     active.set(Active.RELEASE)
                     url.set("https://central.sonatype.com/api/v1/publisher")
+                    skipPublicationCheck.set(true)
 
                     subprojects.forEach {
                         stagingRepository(it.layout.buildDirectory.dir("staging-deploy").get().asFile.absolutePath)
@@ -121,7 +122,6 @@ jreleaser {
     release {
         github {
             repoOwner = "jdekim43"
-            skipTag = true
             prerelease.pattern = ".*-*"
         }
     }
