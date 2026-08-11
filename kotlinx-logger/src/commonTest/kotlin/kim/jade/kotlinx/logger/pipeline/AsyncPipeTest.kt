@@ -1,5 +1,6 @@
 package kim.jade.kotlinx.logger.pipeline
 
+import io.kotest.assertions.throwables.shouldNotThrowAny
 import io.kotest.core.spec.style.FunSpec
 import io.kotest.matchers.shouldBe
 import io.kotest.matchers.types.shouldBeSameInstanceAs
@@ -73,6 +74,35 @@ class AsyncPipeTest : FunSpec({
             withTimeout(5_000) {
                 received.await() shouldBe "after"
             }
+        }
+    }
+
+    context("back pressure") {
+        test("a burst far larger than the queue never fails the code that logged it") {
+            val asyncPipe = AsyncPipe(capacity = 4)
+            val delivered = Channel<String>(Channel.UNLIMITED)
+
+            try {
+                shouldNotThrowAny {
+                    repeat(1_000) { index ->
+                        asyncPipe.apply(record("record-$index")) { delivered.trySend(it.body) }
+                    }
+                }
+            } finally {
+                delivered.cancel()
+                asyncPipe.shutdown()
+            }
+        }
+
+        test("records offered after shutdown are counted as dropped, not reported to the caller") {
+            val asyncPipe = AsyncPipe(capacity = 4)
+            asyncPipe.shutdown()
+
+            shouldNotThrowAny {
+                asyncPipe.apply(record("after-shutdown")) { error("the pipe is closed; this must not run") }
+            }
+
+            asyncPipe.dropped shouldBe 1L
         }
     }
 })

@@ -74,11 +74,9 @@ class KtorLoggingTest : FunSpec({
             assertSoftly(capture.records.single()) {
                 level shouldBe LogLevel.INFO
                 body shouldStartWith "200 OK: GET - /orders/42 in "
-                meta["pathParameter"].shouldBeInstanceOf<String>() shouldContain "id = 42"
-                meta["query"].shouldBeInstanceOf<String>().apply {
-                    this shouldContain "tag = one"
-                    this shouldContain "tag = two"
-                }
+                meta["pathParameter"].shouldBeInstanceOf<Map<String, Any?>>() shouldContain ("id" to "42")
+                meta["query"].shouldBeInstanceOf<Map<String, Any?>>() shouldContain
+                        ("tag" to listOf("one", "two"))
                 meta shouldContain ("requestHeader" to "present")
             }
         }
@@ -167,6 +165,59 @@ class KtorLoggingTest : FunSpec({
                 this shouldContain ("custom" to "value")
                 containsKey("route") shouldBe true
             }
+        }
+
+        test("does not copy request headers unless they were named") {
+            testApplication {
+                application {
+                    install(LogContext)
+                    routing {
+                        get("/context/headers") {
+                            logger.info {
+                                withCoroutine()
+                                "inside route"
+                            }
+                            call.respondText("ok")
+                        }
+                    }
+                }
+
+                client.get("/context/headers") {
+                    header(HttpHeaders.Authorization, "Bearer secret-value")
+                    header(HttpHeaders.Cookie, "session=abc")
+                }.status shouldBe HttpStatusCode.OK
+            }
+
+            assertSoftly(capture.records.single().context) {
+                containsKey("headers") shouldBe false
+                values.none { it.toString().contains("secret-value") } shouldBe true
+            }
+        }
+
+        test("copies only the named headers") {
+            testApplication {
+                application {
+                    install(LogContext) {
+                        includedHeaders = setOf("x-request-id")
+                    }
+                    routing {
+                        get("/context/allowlist") {
+                            logger.info {
+                                withCoroutine()
+                                "inside route"
+                            }
+                            call.respondText("ok")
+                        }
+                    }
+                }
+
+                client.get("/context/allowlist") {
+                    header("X-Request-Id", "req-9")
+                    header(HttpHeaders.Authorization, "Bearer secret-value")
+                }.status shouldBe HttpStatusCode.OK
+            }
+
+            capture.records.single().context["headers"] shouldBe mapOf("X-Request-Id" to "req-9")
         }
     }
 })

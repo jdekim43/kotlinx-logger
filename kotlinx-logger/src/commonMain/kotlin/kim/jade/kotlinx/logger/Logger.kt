@@ -4,6 +4,7 @@ package kim.jade.kotlinx.logger
 
 import co.touchlab.stately.collections.SharedHashMap
 import kim.jade.kotlinx.extension.qualifiedOrSimpleName
+import kim.jade.kotlinx.io.eprintln
 import kim.jade.kotlinx.logger.context.CoroutineLogContext
 import kim.jade.kotlinx.logger.context.LogContext
 import kim.jade.kotlinx.logger.context.snapCurrentLogContext
@@ -22,6 +23,9 @@ internal expect fun initPlatformLogger()
 
 @OptIn(ExperimentalAtomicApi::class)
 private var loggerInitialized = AtomicBoolean(false)
+
+@OptIn(ExperimentalAtomicApi::class)
+private var loggerCacheFullReported = AtomicBoolean(false)
 
 @OptIn(ExperimentalAtomicApi::class)
 private fun initLogger() {
@@ -48,6 +52,11 @@ open class Logger(
         private const val MAX_HIERARCHY_DEPTH: Int = 1000
 
         var defaultLoggerName: String = "default"
+
+        var maxRegisteredLoggers: Int = 4096
+
+        val registeredLoggerCount: Int
+            get() = loggers.size
 
         var defaultLevel: LogLevel = LogLevel.INFO
             set(value) {
@@ -86,7 +95,26 @@ open class Logger(
 
         inline fun <reified T> lazy(): Lazy<Logger> = lazy(T::class)
 
-        fun named(name: String): Logger = loggers.getOrPut(name) { Logger(name) }
+        fun named(name: String): Logger = loggers[name] ?: if (loggers.size >= maxRegisteredLoggers) {
+            reportLoggerCacheFull(name)
+
+            Logger(name)
+        } else {
+            loggers.getOrPut(name) { Logger(name) }
+        }
+
+        fun unregister(name: String): Boolean {
+            if (name == ROOT_LOGGER_NAME) {
+                return false
+            }
+
+            val removed = loggers.remove(name) != null
+            if (removed) {
+                ConfigurationSnapshot.invalidate()
+            }
+
+            return removed
+        }
 
         fun typed(klass: KClass<*>): Logger = named(klass.qualifiedOrSimpleName ?: defaultLoggerName)
 
@@ -101,6 +129,17 @@ open class Logger(
         }
 
         private fun registered(name: String): Logger? = loggers[name]
+
+        @OptIn(ExperimentalAtomicApi::class)
+        private fun reportLoggerCacheFull(name: String) {
+            if (loggerCacheFullReported.compareAndSet(false, true)) {
+                eprintln(
+                    "WARN: Logger: the logger cache holds maxRegisteredLoggers=$maxRegisteredLoggers entries; " +
+                            "'$name' and later names are not cached. Logger names should come from a bounded " +
+                            "set — pass request data as metadata or context instead."
+                )
+            }
+        }
     }
 
     class LogProperties {
@@ -153,8 +192,8 @@ open class Logger(
             return ConfigurationSnapshot(
                 generation = generation,
                 parent = parent,
-                level = configuredLevel ?: parent?.level ?: defaultLevel,
-                pipeline = configuredPipeline ?: (parent?.pipeline ?: defaultPipeline).inherited(),
+                level = configuredLevel ?: inheritedLevel(parent),
+                pipeline = configuredPipeline ?: inheritedPipeline(parent),
             ).also { resolved = it }
         }
 
@@ -163,8 +202,13 @@ open class Logger(
         set(value) {
             var ancestor: Logger? = value
             var depth = 0
-            while (ancestor != null && depth++ < MAX_HIERARCHY_DEPTH) {
+            while (ancestor != null) {
                 require(ancestor !== this) { "'$name' cannot be a descendant of itself" }
+                require(depth++ < MAX_HIERARCHY_DEPTH) {
+                    "'$name' cannot inherit from '${value?.name}': the chain above it is longer than " +
+                            "$MAX_HIERARCHY_DEPTH, so it cannot be checked for a cycle"
+                }
+
                 ancestor = ancestor.run { configuredParent ?: resolveParent() }
             }
 
@@ -349,6 +393,54 @@ open class Logger(
 
     inline fun trace(body: LogProperties.() -> String) {
         log(LogLevel.TRACE, body)
+    }
+
+    /**
+     * Level of the nearest ancestor that configured one, or [defaultLevel].
+     *
+     * Walking the chain here instead of reading `parent.level` keeps resolution bounded. The [parent] setter
+     * rejects a cycle, but two threads pointing two loggers at each other at the same time can both pass that
+     * check, and a recursive resolution would then overflow the stack on every later log call.
+     */
+    private fun inheritedLevel(parent: Logger?): LogLevel {
+        var ancestor = parent
+        var depth = 0
+
+        while (ancestor != null && depth++ < MAX_HIERARCHY_DEPTH) {
+            ancestor.configuredLevel?.let { return it }
+            ancestor = ancestor.run { configuredParent ?: resolveParent() }
+        }
+
+        return defaultLevel
+    }
+
+    /**
+     * Pipeline of the nearest ancestor that configured one, with every `configurePipelineFromParent` between
+     * that ancestor and this logger applied on the way down. Bounded for the same reason as [inheritedLevel].
+     */
+    private fun inheritedPipeline(parent: Logger?): LogPipeline {
+        val descendants = mutableListOf<Logger>()
+        var ancestor = parent
+        var configured: LogPipeline? = null
+        var depth = 0
+
+        while (ancestor != null && depth++ < MAX_HIERARCHY_DEPTH) {
+            val ancestorPipeline = ancestor.configuredPipeline
+            if (ancestorPipeline != null) {
+                configured = ancestorPipeline
+                break
+            }
+
+            descendants.add(ancestor)
+            ancestor = ancestor.run { configuredParent ?: resolveParent() }
+        }
+
+        var pipeline = configured ?: defaultPipeline
+        for (index in descendants.indices.reversed()) {
+            pipeline = descendants[index].run { pipeline.inherited() }
+        }
+
+        return pipeline.inherited()
     }
 
     private fun resolveParent(): Logger? {

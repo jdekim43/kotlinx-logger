@@ -1,3 +1,5 @@
+@file:Suppress("unused")
+
 package kim.jade.kotlinx.logger.context
 
 import kim.jade.kotlinx.thread.ThreadLocal
@@ -81,6 +83,38 @@ object ThreadLogContext : MutableLogContext {
         return value
     }
 
+    data class Data(
+        val data: MutableLogContext?,
+        val stack: MutableContextStack?,
+    ) {
+
+        fun clone(): Data = Data(data?.clone(), stack?.deepCopy())
+    }
+
+    fun captureData(): Data = Data(
+        data = threadLocalData.get()?.clone(),
+        stack = threadLocalStack.get()?.deepCopy(),
+    )
+
+    fun restoreData(data: Data) {
+        if (data.data == null) {
+            threadLocalData.remove()
+        } else {
+            threadLocalData.set(data.data)
+        }
+
+        if (data.stack == null) {
+            threadLocalStack.remove()
+        } else {
+            threadLocalStack.set(data.stack)
+        }
+    }
+
+    fun reset() {
+        threadLocalData.remove()
+        threadLocalStack.remove()
+    }
+
     fun copyAllInStack(): MutableContextStack = stack.deepCopy()
 
     fun copyAllInStack(key: String): MutableList<Any?>? = stack[key]?.toMutableList()
@@ -90,4 +124,29 @@ object ThreadLogContext : MutableLogContext {
     }
 
     fun MutableContextStack.deepCopy(): MutableContextStack = mapValues { it.value.toMutableList() }.toMutableMap()
+}
+
+fun <R> withThreadLogContext(data: Map<String, Any?>, block: () -> R): R {
+    val restored = ThreadLogContext.captureData()
+
+    try {
+        ThreadLogContext.putAll(data)
+
+        return block()
+    } finally {
+        ThreadLogContext.restoreData(restored)
+    }
+}
+
+fun <R> withThreadLogContext(vararg data: Pair<String, Any?>, block: () -> R): R =
+    withThreadLogContext(data.toMap(), block)
+
+fun <R> ThreadLogContext.use(block: () -> R): R {
+    val restored = captureData()
+
+    try {
+        return block()
+    } finally {
+        restoreData(restored)
+    }
 }

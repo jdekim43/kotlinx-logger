@@ -1,8 +1,10 @@
 package kim.jade.kotlinx.logger.context
 
+import io.kotest.assertions.throwables.shouldThrow
 import io.kotest.core.spec.style.FunSpec
 import io.kotest.matchers.collections.shouldContainExactly
 import io.kotest.matchers.maps.shouldContainExactly
+import io.kotest.matchers.nulls.shouldBeNull
 import io.kotest.matchers.shouldBe
 import io.kotest.matchers.types.shouldBeSameInstanceAs
 import io.kotest.matchers.types.shouldNotBeSameInstanceAs
@@ -43,7 +45,7 @@ class LogContextTest : FunSpec({
         test("clones and snapshots do not share subsequent mutations") {
             val context = MutableLogContext(mapOf("requestId" to "request-1"))
             val clone = context.clone()
-            val snapshot = context.snap()
+            val snapshot = context.toImmutable()
             val merged = context + mapOf("attempt" to 2)
 
             context["requestId"] = "request-2"
@@ -176,6 +178,45 @@ class LogContextTest : FunSpec({
             first shouldNotBeSameInstanceAs second
             first.isEmpty() shouldBe true
             second.isEmpty() shouldBe true
+        }
+    }
+
+    context("scoped thread context") {
+        afterTest {
+            ThreadLogContext.reset()
+        }
+
+        test("entries added for a block do not outlive it") {
+            ThreadLogContext["tenant"] = "alpha"
+
+            withThreadLogContext("userId" to "user-1") {
+                ThreadLogContext["userId"] shouldBe "user-1"
+                ThreadLogContext["tenant"] shouldBe "alpha"
+            }
+
+            ThreadLogContext.containsKey("userId") shouldBe false
+            ThreadLogContext["tenant"] shouldBe "alpha"
+        }
+
+        test("the previous state is restored even when the block fails") {
+            ThreadLogContext["tenant"] = "alpha"
+
+            shouldThrow<IllegalStateException> {
+                withThreadLogContext("userId" to "user-1") { error("handler failed") }
+            }
+
+            ThreadLogContext.containsKey("userId") shouldBe false
+            ThreadLogContext["tenant"] shouldBe "alpha"
+        }
+
+        test("writes made inside the block are rolled back too, so a pooled thread starts clean") {
+            withThreadLogContext(mapOf("userId" to "user-1")) {
+                ThreadLogContext["orderId"] = "order-2"
+                ThreadLogContext.push("step", "validate")
+            }
+
+            ThreadLogContext.isEmpty() shouldBe true
+            ThreadLogContext.copyAllInStack("step").shouldBeNull()
         }
     }
 })

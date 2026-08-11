@@ -2,6 +2,7 @@ package kim.jade.kotlinx.logger.pipeline
 
 import kim.jade.kotlinx.logger.LogRecord
 import kim.jade.kotlinx.logger.LogRecordData
+import kotlin.math.max
 
 open class LoggerNameShortener(
     var preferLength: Int = 36,
@@ -44,8 +45,8 @@ open class LoggerNameShortener(
         var idx = 0
         while (diff > 0 && tokens.size - 1 > idx) {
             val token = tokens[idx]
-            result.add(token[0].toString())
-            diff -= token.length - 1
+            result.add(token.firstOrNull()?.toString() ?: "")
+            diff -= max(0, token.length - 1)
             idx++
         }
 

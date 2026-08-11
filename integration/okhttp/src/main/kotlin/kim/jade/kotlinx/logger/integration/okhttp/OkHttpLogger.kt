@@ -8,11 +8,13 @@ import kim.jade.kotlinx.logger.context.LogContext
 import kim.jade.kotlinx.logger.context.snapCurrentLogContext
 import okhttp3.Headers
 import okhttp3.Interceptor
+import okhttp3.Request
 import okhttp3.Response
 import okhttp3.internal.http.promisesBody
 import okio.Buffer
 import okio.GzipSource
 import java.io.EOFException
+import java.io.IOException
 import java.nio.charset.Charset
 import java.nio.charset.StandardCharsets
 import kotlin.time.Clock
@@ -23,6 +25,11 @@ class OkHttpLogger(
     private val logger: Logger = Logger.named("HttpClientLogger-$clientName"),
 ) : Interceptor {
 
+    companion object {
+
+        const val DEFAULT_MAX_BODY_BYTES: Long = 32L * 1024
+    }
+
     data class HttpLogOption(
         var successLogLevel: LogLevel = LogLevel.DEBUG,
         var failLogLevel: LogLevel = LogLevel.WARNING,
@@ -31,6 +38,7 @@ class OkHttpLogger(
         var includeResponseHeaders: Boolean = false,
         var includeResponseBody: Boolean = false,
         var combineLog: Boolean = true,
+        var maxBodyBytes: Long = DEFAULT_MAX_BODY_BYTES,
     )
 
     override fun intercept(chain: Interceptor.Chain): Response {
@@ -40,24 +48,7 @@ class OkHttpLogger(
         val logContext = snapCurrentLogContext() + request.tag(LogContext::class.java)
 
         val requestHeaders = if (option.includeRequestHeaders) request.headers.toMap() else emptyMap()
-
-        val okHttpRequestBody = request.body
-        val requestBody = if (
-            okHttpRequestBody == null
-            || !option.includeRequestBody
-            || bodyHasUnknownEncoding(request.headers)
-            || okHttpRequestBody.isDuplex()
-            || okHttpRequestBody.isOneShot()
-        ) null else {
-            val buffer = Buffer()
-            okHttpRequestBody.writeTo(buffer)
-
-            if (buffer.isProbablyUtf8()) {
-                buffer.readString(Charsets.UTF_8)
-            } else {
-                "Binary (${request.body!!.contentLength()}byte)"
-            }
-        }
+        val requestBody = capturedRequestBody(request)
 
         val requestTimestamp = Clock.System.now()
         val requestLog = HttpRequestLog(
@@ -92,33 +83,7 @@ class OkHttpLogger(
 
         val responseTimestamp = Clock.System.now()
         val responseHeaders = if (option.includeResponseHeaders) response.headers.toMap() else emptyMap()
-        val okHttpResponseBody = response.body
-        val responseBody = if (
-            !option.includeResponseBody
-            || !response.promisesBody()
-            || bodyHasUnknownEncoding(response.headers)
-            || okHttpRequestBody!!.contentLength() == 0L
-        ) null else {
-            val source = okHttpResponseBody.source()
-            source.request(Long.MAX_VALUE)
-
-            var buffer = source.buffer
-
-            if ("gzip".equals(response.headers["Content-Encoding"], ignoreCase = true)) {
-                GzipSource(buffer.clone()).use { gzippedResponseBody ->
-                    buffer = Buffer()
-                    buffer.writeAll(gzippedResponseBody)
-                }
-            }
-
-            if (buffer.isProbablyUtf8()) {
-                val contentType = okHttpResponseBody.contentType()
-                val charset: Charset = contentType?.charset(StandardCharsets.UTF_8) ?: StandardCharsets.UTF_8
-                buffer.clone().readString(charset)
-            } else {
-                "Binary (${okHttpResponseBody.contentLength()}byte)"
-            }
-        }
+        val responseBody = capturedResponseBody(response)
 
         val responseLog = HttpResponseLog(
             requestLog,
@@ -131,6 +96,94 @@ class OkHttpLogger(
         logger.log(responseLog.toLogRecord(logger.name, option.successLogLevel, logContext, option.combineLog))
 
         return response
+    }
+
+    private fun capturedRequestBody(request: Request): String? {
+        val body = request.body
+
+        if (body == null || !option.includeRequestBody) {
+            return null
+        }
+
+        if (bodyHasUnknownEncoding(request.headers) || body.isDuplex() || body.isOneShot()) {
+            return null
+        }
+
+        val declaredLength = body.contentLength()
+        if (declaredLength > option.maxBodyBytes) {
+            return "Skipped (${declaredLength}byte, over maxBodyBytes=${option.maxBodyBytes})"
+        }
+
+        val buffer = Buffer()
+        body.writeTo(buffer)
+
+        return buffer.loggable(option.maxBodyBytes, body.contentType()?.charset(StandardCharsets.UTF_8))
+    }
+
+    private fun capturedResponseBody(response: Response): String? {
+        if (!option.includeResponseBody || !response.promisesBody()) {
+            return null
+        }
+
+        if (bodyHasUnknownEncoding(response.headers)) {
+            return null
+        }
+
+        val body = response.body
+        if (body.contentLength() == 0L) {
+            return null
+        }
+
+        val source = body.source()
+
+        source.request(option.maxBodyBytes + 1)
+
+        val transferred = source.buffer.clone()
+        val cutShort = transferred.size > option.maxBodyBytes
+        val charset = body.contentType()?.charset(StandardCharsets.UTF_8)
+
+        if (!"gzip".equals(response.headers["Content-Encoding"], ignoreCase = true)) {
+            return transferred.loggable(option.maxBodyBytes, charset, cutShort)
+        }
+
+        val decompressed = transferred.gunzipped(option.maxBodyBytes)
+
+        return if (decompressed.size == 0L && cutShort) {
+            "Unavailable (gzip body over maxBodyBytes=${option.maxBodyBytes})"
+        } else {
+            decompressed.loggable(option.maxBodyBytes, charset, cutShort)
+        }
+    }
+
+    private fun Buffer.gunzipped(limit: Long): Buffer {
+        val decompressed = Buffer()
+
+        GzipSource(this).use { source ->
+            while (decompressed.size <= limit) {
+                val read = try {
+                    source.read(decompressed, limit + 1 - decompressed.size)
+                } catch (_: IOException) {
+                    break
+                }
+
+                if (read == -1L) {
+                    break
+                }
+            }
+        }
+
+        return decompressed
+    }
+
+    private fun Buffer.loggable(limit: Long, charset: Charset?, cutShort: Boolean = false): String {
+        if (!isProbablyUtf8()) {
+            return "Binary (${size}byte)"
+        }
+
+        val readable = minOf(size, limit)
+        val text = clone().readString(readable, charset ?: StandardCharsets.UTF_8)
+
+        return if (cutShort || size > limit) "$text… (truncated at ${readable}byte)" else text
     }
 
     private fun Buffer.isProbablyUtf8(): Boolean {

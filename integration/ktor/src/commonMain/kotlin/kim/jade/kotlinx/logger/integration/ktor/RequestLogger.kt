@@ -36,8 +36,14 @@ class RequestLoggerConfiguration {
     var canLogBody: ApplicationCall.() -> Boolean = { false }
     var logger: Logger = Logger.named("RequestLogger")
 
+    var maxBodyLength: Int = DEFAULT_MAX_BODY_LENGTH
+
     // if null, would be not logged.
     var logLevel: (ApplicationCall) -> LogLevel? = { LogLevel.INFO }
+
+    companion object {
+        const val DEFAULT_MAX_BODY_LENGTH: Int = 8 * 1024
+    }
 }
 
 private fun Hook(phase: PipelinePhase) = object : Hook<suspend (ApplicationCall, suspend () -> Unit) -> Unit> {
@@ -85,14 +91,14 @@ val RequestLogger = createApplicationPlugin("RequestLogger", { RequestLoggerConf
 
         val meta = mutableMapOf<String, Any?>()
 
-        meta["pathParameter"] = call.parameters.toKeyValueString()
-        meta["query"] = call.request.queryParameters.toKeyValueString()
+        meta["pathParameter"] = call.parameters.toValueMap()
+        meta["query"] = call.request.queryParameters.toValueMap()
 
         if (call.request.httpMethod.readableBody
             && call.request.contentType().readableBody
             && call.attributes.getOrNull(REQUEST_LOG_BODY) ?: pluginConfig.canLogBody(call)
         ) {
-            meta["body"] = call.receiveText()
+            meta["body"] = call.loggableBody(pluginConfig.maxBodyLength)
         }
 
         pluginConfig.additionalMeta(call, meta)
@@ -115,7 +121,17 @@ val RequestLogger = createApplicationPlugin("RequestLogger", { RequestLoggerConf
     }
 }
 
-private fun Parameters.toKeyValueString() = flattenEntries().joinToString { "${it.first} = ${it.second}" }
+private fun Parameters.toValueMap(): Map<String, Any?> = entries().associate { (name, values) ->
+    name to if (values.size == 1) values.single() else values
+}
+
+private suspend fun ApplicationCall.loggableBody(limit: Int): String = try {
+    val text = receiveText()
+
+    if (text.length > limit) "${text.take(limit)}… (truncated at $limit chars)" else text
+} catch (e: Exception) {
+    "Unavailable (${e::class.simpleName})"
+}
 
 private val HttpMethod.readableBody
     get() = when (this) {

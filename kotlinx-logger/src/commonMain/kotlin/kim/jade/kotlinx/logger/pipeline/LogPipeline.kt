@@ -2,8 +2,10 @@
 
 package kim.jade.kotlinx.logger.pipeline
 
+import kim.jade.kotlinx.io.eprintln
 import kim.jade.kotlinx.logger.LogRecord
 import kim.jade.kotlinx.logger.Logger
+import kotlin.coroutines.cancellation.CancellationException
 import kotlin.math.max
 import kotlin.math.min
 
@@ -83,7 +85,13 @@ class LogPipeline {
     fun handle(record: LogRecord) {
         val currentChain = chain
 
-        currentChain(record)
+        try {
+            currentChain(record)
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            eprintln("ERROR: LogPipeline: A pipe failed; this record was dropped.\n${e.stackTraceToString()}")
+        }
     }
 
     /**

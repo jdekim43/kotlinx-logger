@@ -78,7 +78,7 @@ class LoggerJvmTest : FunSpec({
             ThreadLogContext["scope"] = "outside"
             val propagated = MutableLogContext(mapOf("scope" to "inside", "requestId" to "request-8"))
 
-            withContext(Dispatchers.Default + CoroutineThreadLogContext(propagated)) {
+            withContext(Dispatchers.Default + CoroutineThreadLogContext(propagated, null)) {
                 ThreadLogContext shouldContainExactly mapOf(
                     "scope" to "inside",
                     "requestId" to "request-8",

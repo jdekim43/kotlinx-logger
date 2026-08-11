@@ -1,6 +1,7 @@
+@file:Suppress("unused")
+
 package kim.jade.kotlinx.logger.context
 
-import kim.jade.kotlinx.logger.context.ThreadLogContext.deepCopy
 import kotlinx.coroutines.CopyableThreadContextElement
 import kotlinx.coroutines.DelicateCoroutinesApi
 import kotlinx.coroutines.ExperimentalCoroutinesApi
@@ -9,40 +10,36 @@ import kotlin.coroutines.CoroutineContext
 
 @OptIn(DelicateCoroutinesApi::class, ExperimentalCoroutinesApi::class)
 class CoroutineThreadLogContext(
-    val context: MutableLogContext = ThreadLogContext.toMutable(),
-    val contextStack: ThreadLogContext.MutableContextStack = ThreadLogContext.copyAllInStack(),
+    val data: ThreadLogContext.Data = ThreadLogContext.captureData(),
 ) : AbstractCoroutineContextElement(Key),
-    CopyableThreadContextElement<CoroutineThreadLogContext.ThreadLogContextState> {
+    CopyableThreadContextElement<ThreadLogContext.Data> {
 
     companion object Key : CoroutineContext.Key<CoroutineThreadLogContext>
 
-    data class ThreadLogContextState(
-        val data: MutableLogContext?,
-        val stack: ThreadLogContext.MutableContextStack?,
+    constructor(context: MutableLogContext?, stack: ThreadLogContext.MutableContextStack?) : this(
+        ThreadLogContext.Data(context, stack)
     )
 
-    override fun updateThreadContext(context: CoroutineContext): ThreadLogContextState {
-        val oldState = ThreadLogContextState(
-            data = ThreadLogContext.toMutable(),
-            stack = ThreadLogContext.copyAllInStack(),
-        )
+    constructor(context: MutableLogContext?) : this(context, null)
 
-        ThreadLogContext.threadLocalData.set(this.context)
-        ThreadLogContext.threadLocalStack.set(this.contextStack)
+    constructor(stack: ThreadLogContext.MutableContextStack?) : this(null, stack)
+
+    override fun updateThreadContext(context: CoroutineContext): ThreadLogContext.Data {
+        val oldState = ThreadLogContext.captureData()
+
+        ThreadLogContext.restoreData(data)
 
         return oldState
     }
 
     override fun restoreThreadContext(
         context: CoroutineContext,
-        oldState: ThreadLogContextState,
+        oldState: ThreadLogContext.Data,
     ) {
-        ThreadLogContext.threadLocalData.set(oldState.data)
-        ThreadLogContext.threadLocalStack.set(oldState.stack)
+        ThreadLogContext.restoreData(oldState)
     }
 
-    override fun copyForChild(): CoroutineThreadLogContext =
-        CoroutineThreadLogContext(context.toMutable(), contextStack.deepCopy())
+    override fun copyForChild(): CoroutineThreadLogContext = CoroutineThreadLogContext(data.clone())
 
     override fun mergeForChild(overwritingElement: CoroutineContext.Element): CoroutineContext =
         (overwritingElement as? CoroutineThreadLogContext)?.copyForChild() ?: overwritingElement

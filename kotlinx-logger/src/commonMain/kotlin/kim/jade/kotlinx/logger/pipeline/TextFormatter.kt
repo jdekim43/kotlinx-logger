@@ -6,10 +6,12 @@ import kim.jade.kotlinx.extension.style
 import kim.jade.kotlinx.logger.LogLevel
 import kim.jade.kotlinx.logger.LogRecord
 import kim.jade.kotlinx.logger.SerializedLog
+import kim.jade.kotlinx.logger.util.escapedForLog
 
 class TextFormatter(
     var printMeta: Boolean = true,
     var enableColor: Boolean = false,
+    var escapeControlChars: Boolean = true,
 ) : LogPipe {
 
     companion object Key : LogPipe.Key<TextFormatter>
@@ -32,32 +34,39 @@ class TextFormatter(
     }
 
     fun format(record: LogRecord): SerializedLog.String {
+        val threadName = record.threadName
+        val eventName = record.eventName
+
         val text = colored(enableColor) {
             record.timestamp.toString().padEnd(23).black.bright + ' ' + buildString {
-                if (record.threadName != null) {
+                if (threadName != null) {
                     append('[')
-                    append(record.threadName)
+                    append(threadName.escaped())
                     append(']')
                     append(' ')
                 }
                 append(record.level.logName.padEnd(5))
                 append(' ')
-                append(record.loggerName.padEnd(36))
+                append(record.loggerName.escaped().padEnd(36))
                 append(" - ")
-                if (record.eventName != null) {
+                if (eventName != null) {
                     append('#')
-                    append(record.eventName)
+                    append(eventName.escaped())
                     append(' ')
                 }
-                append(record.body)
+                append(record.body.escaped())
 
                 if (printMeta && record.meta.isNotEmpty()) {
                     append(' ')
-                    record.meta.map { "${it.key}=${it.value}" }.joinTo(this, ", ", prefix = "(", postfix = ")")
+                    record.meta
+                        .map { "${it.key.escaped()}=${it.value.toString().escaped()}" }
+                        .joinTo(this, ", ", prefix = "(", postfix = ")")
                 }
             }.style(record.level.lineStyle) { enableColor }
         }
 
         return SerializedLog.String(record, text)
     }
+
+    private fun String.escaped(): String = if (escapeControlChars) escapedForLog() else this
 }

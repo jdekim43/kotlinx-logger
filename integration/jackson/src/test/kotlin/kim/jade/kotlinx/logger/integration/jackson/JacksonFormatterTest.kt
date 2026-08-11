@@ -112,18 +112,30 @@ class JacksonFormatterTest : FunSpec({
     }
 
     context("직렬화 실패") {
-        test("Jackson 직렬화 실패는 호출자에게 전파된다") {
+        test("Jackson 직렬화 실패는 텍스트로 대체되고 호출자에게 전파되지 않는다") {
             val brokenModule = SimpleModule().apply {
                 addSerializer(BrokenValue::class.java, BrokenValueSerializer)
             }
             val mapper = jacksonMapperBuilder().addModule(brokenModule).build()
             val record = testRecord(meta = mapOf("broken" to BrokenValue))
 
-            val failure = shouldThrowAny {
-                JacksonFormatter(mapper).format(record)
-            }
+            val formatted = JacksonFormatter(mapper).format(record)
 
-            failure.message.orEmpty() shouldContain "serializer exploded"
+            assertSoftly(formatted.serialized) {
+                this shouldContain "ERROR: JacksonFormatter failed"
+                this shouldContain "serializer exploded"
+                this shouldContain record.body
+            }
+        }
+
+        test("자기 자신을 참조하는 메타데이터도 로그 호출을 깨뜨리지 않는다") {
+            val cyclic = mutableListOf<Any?>()
+            cyclic.add(cyclic)
+            val record = testRecord(meta = mapOf("cyclic" to cyclic))
+
+            val formatted = JacksonFormatter().format(record)
+
+            formatted.serialized shouldContain record.body
         }
     }
 })

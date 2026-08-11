@@ -9,6 +9,7 @@ import kim.jade.kotlinx.logger.pipeline.TextFormatter
 import java.io.PrintWriter
 import java.io.StringWriter
 import java.lang.reflect.Type
+import kotlin.reflect.KProperty
 import kotlin.reflect.KVisibility
 import kotlin.reflect.full.memberProperties
 import kotlin.time.Instant
@@ -38,9 +39,15 @@ class GsonFormatter(
     fun format(record: LogRecord): SerializedLog.String = try {
         SerializedLog.String(record, gson.toJson(record))
     } catch (e: Exception) {
-        val fallback = textFormatter.format(record)
+        fallback(record, e.message)
+    } catch (_: StackOverflowError) {
+        fallback(record, "the logged value is too deeply nested or refers back to itself")
+    }
 
-        SerializedLog.String(record, "ERROR: GsonFormatter failed: ${e.message}\n${fallback.serialized}")
+    private fun fallback(record: LogRecord, reason: String?): SerializedLog.String {
+        val text = textFormatter.format(record)
+
+        return SerializedLog.String(record, "ERROR: GsonFormatter failed: $reason\n${text.serialized}")
     }
 
     override fun apply(record: LogRecord, next: (LogRecord) -> Unit) {
@@ -94,9 +101,15 @@ class GsonFormatter(
 
             val fields = throwable::class.memberProperties
                 .filter { it.visibility == KVisibility.PUBLIC && !it.isSuspend && it.name != "cause" }
-                .associate { it.name to it.call(throwable) }
+                .associate { it.name to it.readOrNull(throwable) }
 
             return context.serialize(fields)
         }
     }
+}
+
+private fun KProperty<*>.readOrNull(instance: Any): Any? = try {
+    call(instance)
+} catch (_: Exception) {
+    null
 }

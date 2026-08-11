@@ -1,16 +1,19 @@
 package kim.jade.kotlinx.logger.integration.okhttp
 
 import io.kotest.assertions.assertSoftly
+import io.kotest.assertions.throwables.shouldNotThrowAny
 import io.kotest.assertions.throwables.shouldThrow
 import io.kotest.core.spec.style.FunSpec
 import io.kotest.datatest.withData
 import io.kotest.matchers.collections.shouldBeEmpty
 import io.kotest.matchers.collections.shouldHaveSize
+import io.kotest.matchers.ints.shouldBeLessThan
 import io.kotest.matchers.longs.shouldBeGreaterThanOrEqual
 import io.kotest.matchers.maps.shouldContain
 import io.kotest.matchers.shouldBe
 import io.kotest.matchers.string.shouldContain
 import io.kotest.matchers.string.shouldStartWith
+import io.kotest.matchers.types.shouldBeInstanceOf
 import kim.jade.kotlinx.logger.LogLevel
 import kim.jade.kotlinx.logger.LogRecord
 import kim.jade.kotlinx.logger.Logger
@@ -25,6 +28,10 @@ import okhttp3.RequestBody.Companion.toRequestBody
 import okhttp3.Response
 import okhttp3.ResponseBody.Companion.toResponseBody
 import okhttp3.logging.HttpLoggingInterceptor
+import okio.Buffer
+import okio.ByteString
+import okio.GzipSink
+import okio.buffer
 import java.io.IOException
 import kotlin.time.Clock
 import kotlin.time.DurationUnit
@@ -329,8 +336,128 @@ class HttpLogTest : FunSpec({
             sink.records.single().exception shouldBe expected
             sink.records.single().body shouldContain " -1 ("
         }
+
+        test("요청 body가 없는 GET에서도 응답 body를 기록한다") {
+            val interceptor = OkHttpLogger(
+                clientName = "backend",
+                option = OkHttpLogger.HttpLogOption(
+                    includeResponseBody = true,
+                    combineLog = true,
+                ),
+                logger = logger,
+            )
+            val client = clientWithTerminalInterceptor(interceptor) { request ->
+                successfulResponse(request)
+            }
+            val request = Request.Builder().url("https://api.example.com/health").get().build()
+
+            val body = shouldNotThrowAny {
+                client.newCall(request).execute().use { it.body.string() }
+            }
+
+            body shouldBe "response-body"
+
+            @Suppress("UNCHECKED_CAST")
+            val responseMeta = sink.records.single().meta["response"] as Map<String, Any?>
+            responseMeta["body"] shouldBe "response-body"
+        }
+
+        test("maxBodyBytes를 넘는 응답 body는 잘라 기록하고 호출자에게는 전체를 전달한다") {
+            val interceptor = OkHttpLogger(
+                clientName = "backend",
+                option = OkHttpLogger.HttpLogOption(
+                    includeResponseBody = true,
+                    combineLog = true,
+                    maxBodyBytes = 64,
+                ),
+                logger = logger,
+            )
+            val payload = "x".repeat(4_096)
+            val client = clientWithTerminalInterceptor(interceptor) { request ->
+                successfulResponse(request, payload)
+            }
+            val request = Request.Builder().url("https://api.example.com/big").get().build()
+
+            val body = client.newCall(request).execute().use { it.body.string() }
+
+            body shouldBe payload
+
+            @Suppress("UNCHECKED_CAST")
+            val responseMeta = sink.records.single().meta["response"] as Map<String, Any?>
+            val logged = responseMeta["body"].shouldBeInstanceOf<String>()
+            logged shouldStartWith "x".repeat(64)
+            logged shouldContain "truncated at 64byte"
+            logged.length shouldBeLessThan 128
+        }
+
+        test("maxBodyBytes를 넘는 요청 body는 버퍼링하지 않고 건너뛴다") {
+            val interceptor = OkHttpLogger(
+                clientName = "backend",
+                option = OkHttpLogger.HttpLogOption(
+                    includeRequestBody = true,
+                    combineLog = true,
+                    maxBodyBytes = 64,
+                ),
+                logger = logger,
+            )
+            val client = clientWithTerminalInterceptor(interceptor) { request ->
+                successfulResponse(request)
+            }
+            val request = Request.Builder()
+                .url("https://api.example.com/upload")
+                .post("y".repeat(4_096).toRequestBody("text/plain; charset=utf-8".toMediaType()))
+                .build()
+
+            client.newCall(request).execute().close()
+
+            @Suppress("UNCHECKED_CAST")
+            val requestMeta = sink.records.single().meta["request"] as Map<String, Any?>
+            requestMeta["body"].shouldBeInstanceOf<String>() shouldContain "over maxBodyBytes=64"
+        }
+
+        test("압축을 풀면 커지는 gzip 응답도 maxBodyBytes 안에서만 읽는다") {
+            val interceptor = OkHttpLogger(
+                clientName = "backend",
+                option = OkHttpLogger.HttpLogOption(
+                    includeResponseBody = true,
+                    combineLog = true,
+                    maxBodyBytes = 256,
+                ),
+                logger = logger,
+            )
+            val compressed = gzipped("z".repeat(1_000_000))
+            val client = clientWithTerminalInterceptor(interceptor) { request ->
+                Response.Builder()
+                    .request(request)
+                    .protocol(Protocol.HTTP_2)
+                    .code(200)
+                    .message("OK")
+                    .header("Content-Type", "text/plain; charset=utf-8")
+                    .header("Content-Encoding", "gzip")
+                    .body(compressed.toResponseBody("text/plain; charset=utf-8".toMediaType()))
+                    .build()
+            }
+            val request = Request.Builder().url("https://api.example.com/gzip").get().build()
+
+            client.newCall(request).execute().close()
+
+            @Suppress("UNCHECKED_CAST")
+            val responseMeta = sink.records.single().meta["response"] as Map<String, Any?>
+            val logged = responseMeta["body"].shouldBeInstanceOf<String>()
+
+            logged.length shouldBeLessThan 512
+            logged shouldContain "truncated"
+        }
     }
 })
+
+private fun gzipped(text: String): ByteString {
+    val compressed = Buffer()
+
+    GzipSink(compressed).buffer().use { it.writeUtf8(text) }
+
+    return compressed.readByteString()
+}
 
 private class CapturingPipe : LogPipe {
     companion object Key : LogPipe.Key<CapturingPipe>
@@ -352,12 +479,12 @@ private fun clientWithTerminalInterceptor(
     .addInterceptor { chain -> response(chain.request()) }
     .build()
 
-private fun successfulResponse(request: Request): Response = Response.Builder()
+private fun successfulResponse(request: Request, body: String = "response-body"): Response = Response.Builder()
     .request(request)
     .protocol(Protocol.HTTP_2)
     .code(201)
     .message("Created")
     .header("Content-Type", "text/plain; charset=utf-8")
     .header("X-Response-ID", "res-1")
-    .body("response-body".toResponseBody("text/plain; charset=utf-8".toMediaType()))
+    .body(body.toResponseBody("text/plain; charset=utf-8".toMediaType()))
     .build()

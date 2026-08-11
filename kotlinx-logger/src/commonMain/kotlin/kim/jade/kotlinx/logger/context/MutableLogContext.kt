@@ -21,9 +21,9 @@ interface MutableLogContext : LogContext, MutableMap<String, Any?> {
         }
     }
 
-    fun snap(): LogContext = LogContextCopied(this)
-
     override fun clone(): MutableLogContext = MutableLogContextCopied(this)
+
+    fun toImmutable(): LogContext = LogContextCopied(this)
 }
 
 internal open class MutableLogContextMap : MutableLogContext, MutableMap<String, Any?> by SharedHashMap()

@@ -13,10 +13,12 @@ import kim.jade.kotlinx.logger.context.MutableLogContext
 import kotlinx.coroutines.withContext
 
 class LogContextConfiguration {
+
+    var includedHeaders: Set<String> = emptySet()
+
     var setupContext: ApplicationCall.(MutableLogContext) -> Unit = {
         it["remoteAddress"] = request.host()
         it["userAgent"] = request.userAgent()
-        it["headers"] = request.headers.toMap()
     }
 }
 
@@ -38,10 +40,18 @@ private fun Hook(phase: PipelinePhase) = object : Hook<suspend (ApplicationCall,
 internal val RouteKey = AttributeKey<MutableLogContext>("LogContext")
 
 val LogContext = createApplicationPlugin("LogContext", { LogContextConfiguration() }) {
+    val includedHeaders = pluginConfig.includedHeaders.mapTo(mutableSetOf()) { it.lowercase() }
+
     fun MutableLogContext.setContextsFrom(call: ApplicationCall) {
         this["callId"] = call.callId
         this["method"] = call.request.httpMethod
         this["path"] = call.request.path()
+
+        if (includedHeaders.isNotEmpty()) {
+            this["headers"] = call.request.headers.entries()
+                .filter { it.key.lowercase() in includedHeaders }
+                .associate { it.key to it.value.joinToString(", ") }
+        }
 
         pluginConfig.setupContext(call, this)
     }

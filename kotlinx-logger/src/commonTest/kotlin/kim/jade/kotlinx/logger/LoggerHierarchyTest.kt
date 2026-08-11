@@ -4,12 +4,15 @@ import io.kotest.assertions.throwables.shouldNotThrowAny
 import io.kotest.assertions.throwables.shouldThrow
 import io.kotest.core.spec.style.FunSpec
 import io.kotest.matchers.collections.shouldHaveSize
+import io.kotest.matchers.ints.shouldBeLessThan
 import io.kotest.matchers.nulls.shouldBeNull
 import io.kotest.matchers.shouldBe
 import io.kotest.matchers.types.shouldBeSameInstanceAs
 import io.kotest.matchers.types.shouldNotBeSameInstanceAs
 import kim.jade.kotlinx.logger.pipeline.LogPipe
 import kim.jade.kotlinx.logger.pipeline.LogPipeline
+import kim.jade.kotlinx.logger.pipeline.RedactPipe
+import kim.jade.kotlinx.logger.pipeline.TextFormatter
 
 /** Unique per instance so that installing several capture pipes does not replace by key. */
 private class HierarchyCaptureKey : LogPipe.Key<HierarchyCapturePipe>
@@ -355,6 +358,38 @@ class LoggerHierarchyTest : FunSpec({
 
             Logger.named("hier20.a").level shouldBe LogLevel.INFO
             Logger.named("hier20.a.b").level shouldBe LogLevel.INFO
+        }
+    }
+
+    context("registry bounds") {
+        var originalMax = Logger.maxRegisteredLoggers
+
+        beforeTest {
+            originalMax = Logger.maxRegisteredLoggers
+        }
+
+        afterTest {
+            Logger.maxRegisteredLoggers = originalMax
+            Logger.unregister("hier21.bounded")
+        }
+
+        test("a name arriving past the cache limit still logs, but is not cached") {
+            Logger.maxRegisteredLoggers = Logger.registeredLoggerCount
+
+            val first = Logger.named("hier21.uncached")
+            val second = Logger.named("hier21.uncached")
+
+            first shouldNotBeSameInstanceAs second
+            first.level shouldBe Logger.defaultLevel
+        }
+
+        test("unregister releases a cached name and refuses the root") {
+            Logger.named("hier21.bounded")
+
+            Logger.unregister("hier21.bounded") shouldBe true
+            Logger.unregister("hier21.bounded") shouldBe false
+            Logger.unregister(Logger.ROOT_LOGGER_NAME) shouldBe false
+            Logger.root shouldBeSameInstanceAs Logger.named(Logger.ROOT_LOGGER_NAME)
         }
     }
 })

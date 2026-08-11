@@ -25,8 +25,8 @@ configure<PublishingExtension> {
         artifact(javadocJar)
         pom {
             name.set(project.name)
-            description.set("Kotlin Multiplatform Utilities")
-            url.set("https://github.com/jdekim43/kotlinx")
+            description.set("Kotlin Multiplatform structured logging library with coroutine context propagation, customizable pipelines, and OpenTelemetry/Sentry/SLF4J integrations")
+            url.set("https://github.com/jdekim43/kotlinx-logger")
             licenses {
                 license {
                     name.set("The Apache License, Version 2.0")
@@ -40,9 +40,9 @@ configure<PublishingExtension> {
                 }
             }
             scm {
-                connection.set("scm:git:https://github.com/jdekim43/kotlinx.git")
-                developerConnection.set("scm:git:ssh://git@github.com/jdekim43/kotlinx.git")
-                url.set("https://github.com/jdekim43/kotlinx")
+                connection.set("scm:git:https://github.com/jdekim43/kotlinx-logger.git")
+                developerConnection.set("scm:git:ssh://git@github.com/jdekim43/kotlinx-logger.git")
+                url.set("https://github.com/jdekim43/kotlinx-logger")
             }
         }
     }

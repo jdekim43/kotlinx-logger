@@ -30,8 +30,11 @@ names. The JVM integration module also provides interoperability with JUL and SL
   processing, and everything
 - **Hierarchical configuration** — [levels and pipelines inherited](#hierarchical-configuration) along dotted logger
   names, so a whole package can be configured at startup
-- **Formatters** — included text formatting plus Gson and Jackson JSON formatters for the JVM. Also, you can create
-  your own.
+- **Formatters** — included text formatting plus Gson and Jackson JSON formatters for the JVM. Also, you can create your
+  own.
+- **Safe with untrusted input** — [control characters are escaped](#handling-untrusted-input) so a request value cannot
+  forge a log line, credential-looking keys are redacted by default, captured bodies are bounded, and a failing pipe
+  never reaches the code that logged the record
 - **Integrations** — Koin, Ktor, OkHttp, OpenTelemetry, and Sentry
 - **Drops into existing stacks** — a JUL handler and an SLF4J 2 provider
 
@@ -45,6 +48,7 @@ names. The JVM integration module also provides interoperability with JUL and SL
   `log`](#generic-log-functions)
 - [Log contexts](#log-contexts) — [immutable & mutable](#immutable-and-mutable-contexts) · [global & thread-local](#global-and-thread-local-contexts) · [coroutine](#coroutine-contexts)
 - [`LogRecord` and metadata](#logrecord-and-metadata)
+- [Handling untrusted input](#handling-untrusted-input)
 - [Pipelines](#pipelines) — [management](#pipeline-management) · [built-in pipes](#built-in-pipes) · [custom pipes](#custom-pipes)
 - [JVM JSON formatters](#jvm-json-formatters) — [Gson](#gson) · [Jackson 3](#jackson-3)
 - [JVM logging interoperability](#jvm-logging-interoperability) — [SLF4J 2](#slf4j-2) · [JUL](#javautillogging-jul)
@@ -307,7 +311,7 @@ logger.debug {
     eventName = "query.failed"
     meta = mapOf("query" to expensiveQueryDescription())
     context = requestContext
-  
+
     "query failed"
 }
 ```
@@ -327,7 +331,7 @@ logger.log(
 
 logger.log(LogLevel.DEBUG) {
     meta = mapOf("jobId" to jobId)
-  
+
     "job started"
 }
 
@@ -413,14 +417,15 @@ Other read and write operations behave like their Kotlin `Map` and `MutableMap` 
 
 ```kotlin
 GlobalLogContext["service"] = "checkout"
+ThreadLogContext["requestId"] = requestId //persistently on the thread
 
-try {
-    ThreadLogContext["requestId"] = requestId
+withThreadLogContext("requestId" to requestId) { //will be cleared after out this block
     logger.info("request received")
-} finally {
-    ThreadLogContext.clear()
 }
 ```
+
+`withThreadLogContext` restores whatever was bound to the thread before the block, including writes made inside it, so
+nothing survives into the next task that borrows the same thread.
 
 `snapCurrentLogContext()` returns an immutable snapshot of `GlobalLogContext + ThreadLogContext`. Thread-local values
 win when keys overlap.
@@ -433,8 +438,11 @@ logger.info("health check", context = EmptyLogContext)
 ```
 
 > [!WARNING]
-> Because `ThreadLogContext` is thread-local, clear it at the appropriate time when using thread pools, or use the
-> coroutine propagation utility below.
+> `ThreadLogContext` has no natural end of its own. On a pooled thread — a servlet container, an executor, a
+> `Dispatchers.Default` worker — whatever the previous task left behind is still attached when the next one starts, so
+> one caller's user id ends up on another caller's log lines. Scope every write with `withThreadLogContext`, or use the
+> coroutine propagation utility below. Writing through the SLF4J `MDC` goes to the same thread-local storage and needs
+> the same treatment.
 
 ### Coroutine contexts
 
@@ -452,7 +460,7 @@ suspend fun runJob(jobId: String) {
     withContext(coroutineLogContext) {
         logger.info {
             withCoroutine()
-          
+
             "job started"
         }
     }
@@ -526,7 +534,7 @@ logger.error {
         "exception" to cause.asLogObject(),
         "operation" to "charge",
     )
-  
+
     "charge failed"
 }
 ```
@@ -601,11 +609,14 @@ pipeline.clear()                         // Remove all pipes
 record already handed to an `AsyncPipe` continues through the downstream chain captured for that call. Since `AsyncPipe`
 resumes downstream processing asynchronously, `handle(record)` can return before those downstream pipes finish.
 
-`AsyncPipe` uses an unbounded FIFO queue by default; pass a channel capacity to its constructor to set a bound. A full
-bounded queue or a closed pipe rejects a new record. Call `close()` to stop accepting records while draining queued
-work, then `join()` to await completion. Call `cancel()` when queued work should be discarded. A downstream failure is
-reported to stderr and does not prevent later queued records from running; coroutine cancellation still stops the
-worker.
+`AsyncPipe` uses a bounded FIFO queue — `AsyncPipe.DEFAULT_CAPACITY` records — because an unbounded one turns a sink
+that cannot keep up into unbounded heap growth. When the queue is full the oldest record is dropped and the running
+total is reported to stderr; `dropped` exposes that count. A log call never fails because the queue is full. Pass a
+capacity to the constructor to change the bound, or `Channel.UNLIMITED` to opt back into an unbounded queue where the
+producer rate is known. `shutdown()` stops the worker and releases the queue; records still queued are not delivered.
+
+A downstream failure is reported to stderr and does not prevent later queued records from running; coroutine
+cancellation still stops the worker.
 
 </details>
 
@@ -613,16 +624,19 @@ worker.
 
 | Pipe                                                    | Purpose and options                                                                                |
 |---------------------------------------------------------|----------------------------------------------------------------------------------------------------|
-| `AsyncPipe()`                                           | Resumes the remaining pipeline asynchronously.                                                     |
+| `AsyncPipe(capacity = 8192)`                            | Resumes the remaining pipeline asynchronously; drops the oldest record when the queue is full.     |
 | `FilterPipe(predicate)`                                 | Passes only records for which the predicate returns `true`.                                        |
 | `MapPipe(transform)`                                    | Transforms a record into another `LogRecord`.                                                      |
+| `RedactPipe()`                                          | Replaces metadata and context values whose key looks like a credential; installed by default.      |
+| `SanitizePipe()`                                        | Escapes control characters in the record itself, for sinks that write lines of their own.          |
 | `LoggerNameShortener(preferLength = 36)`                | Shortens leading dot-separated name segments to one character; the target is not a strict maximum. |
-| `TextFormatter(printMeta = true, enableColor = false)`  | Produces a text `SerializedLog.String`; context is not included.                                   |
+| `TextFormatter(printMeta = true, enableColor = false)`  | Produces a text `SerializedLog.String`; escapes control characters; context is not included.       |
 | `StdOutSink(printStackTrace = true, useStdErr = false)` | Prints serialized messages to stdout or stderr; optional stack traces are printed to stderr.       |
 
-`LoggerNameShortener` cannot be installed more than once with the same key and only transforms `LogRecordData`
-records. To format a record without running a pipeline, call `TextFormatter(...).format(record)`. When installed as a
-pipe, the formatter passes that result to `next`.
+`LoggerNameShortener`, `RedactPipe`, and `SanitizePipe` cannot be installed more than once with the same key and only
+transform `LogRecordData` records — install them before a formatter, which replaces the record with a serialized one. To
+format a record without running a pipeline, call `TextFormatter(...).format(record)`. When installed as a pipe, the
+formatter passes that result to `next`.
 
 The following example uses `MapPipe` to modify a record.
 
@@ -781,6 +795,7 @@ import io.ktor.server.request.header
 import kim.jade.kotlinx.logger.integration.ktor.LogContext as KtorLogContext
 
 install(KtorLogContext) {
+    includedHeaders = setOf("X-Request-Id", "Accept-Language")
     setupContext = { context ->
         context["tenantId"] = request.header("X-Tenant-Id")
     }
@@ -788,8 +803,13 @@ install(KtorLogContext) {
 ```
 
 The plugin adds the call ID, HTTP method, path, and route to `CoroutineLogContext` and runs request handling in that
-coroutine context. The default `setupContext` also adds `remoteAddress`, `userAgent`, and `headers`; the current
-`remoteAddress` value comes from `request.host()`.
+coroutine context. The default `setupContext` also adds `remoteAddress` and `userAgent`; the current `remoteAddress`
+value comes from `request.host()`.
+
+Headers are copied only when named in `includedHeaders`, matched case-insensitively. The context is attached to *every*
+record a call produces, and request headers routinely carry `Authorization`, `Cookie`, or `X-API-Key`, so copying all of
+them would write those credentials to each sink and to every service the pipeline forwards to. `RedactPipe` still
+redacts a credential-looking header if one is named here, but it cannot recognize headers that are merely sensitive.
 
 > [!NOTE]
 > Assigning a new lambda to `setupContext`, as above, replaces the default lambda, so add any required default
@@ -815,8 +835,9 @@ install(RequestLogger) {
 ```
 
 When a response is sent, the plugin logs the status, method, path, and processing time, and adds path parameters and
-query parameters to `meta`. For `302 Found` responses, it also appends the `Location` header to the message. Requests
-for which `logLevel` returns `null` are not logged.
+query parameters to `meta` as maps — keyed by parameter name, so `RedactPipe` redacts a token passed as a query
+parameter the same way it redacts a header. For `302 Found` responses, it also appends the `Location` header to the
+message. Requests for which `logLevel` returns `null` are not logged.
 
 Use the following functions for per-route control:
 
@@ -850,13 +871,17 @@ routing {
 | `canLogBody()`         | The global body-logging condition; defaults to `false`.        |
 | `additionalMeta(meta)` | Adds metadata for each request.                                |
 
+| `maxBodyLength`        | Truncates a captured body; defaults to 8 KiB. |
+
 The body is read only for POST, PUT, or PATCH requests whose content type is JSON or form URL-encoded, and only when
-`logBody(true)` or `canLogBody` permits it.
+`logBody(true)` or `canLogBody` permits it. A body that cannot be read — already consumed by the handler, for instance —
+is recorded as unavailable rather than failing the response.
 
 </details>
 
 > [!CAUTION]
-> Restrict body and header logging carefully to avoid recording passwords, tokens, or personal data.
+> Restrict body and header logging carefully to avoid recording passwords, tokens, or personal data. `RedactPipe`
+> covers values it can recognize by key; it cannot recognize a secret inside a request body.
 
 ### OkHttp
 
@@ -908,8 +933,12 @@ val structuredClient = OkHttpClient.Builder()
 
 `OkHttpLogger.HttpLogOption` controls success and failure levels, header and body capture, and whether request and
 response data are combined in one record. Header and body capture are disabled by default; enable them only when
-sensitive values are excluded. In the current implementation, enable `includeResponseBody` only for requests that have a
-non-null request body.
+sensitive values are excluded.
+
+`maxBodyBytes` (32 KiB by default) bounds what a captured body costs. A response is buffered only up to that many bytes
+and a gzipped one is decompressed no further, so a large response — or a small one that expands into a large one —
+cannot be pulled into memory whole; the captured value is marked as truncated. A request body whose declared length is
+over the limit is skipped rather than buffered. The response itself is untouched and still readable by the caller.
 
 <details>
 <summary><b>Per-request context and manual record conversion</b></summary>
@@ -972,8 +1001,10 @@ import kim.jade.kotlinx.logger.integration.opentelemetry.OpenTelemetrySink
 Logger.defaultPipeline.install(OpenTelemetrySink(openTelemetry))
 ```
 
-`OpenTelemetrySink` forwards the logger name, severity, timestamps, body, exception, and event name. The current
-implementation does not map `LogRecord.meta` or `LogRecord.context` to OpenTelemetry attributes.
+`OpenTelemetrySink` forwards the logger name, severity, timestamps, body, exception, event name, and `LogRecord.meta`
+as attributes; `LogRecord.context` is not mapped. A metadata value that is neither a primitive nor a container is
+converted by reflecting over its public properties, bounded by depth and by a check for values that refer back to
+themselves.
 
 #### From OpenTelemetry to kotlinx-logger
 

@@ -1,5 +1,6 @@
 package kim.jade.kotlinx.logger.pipeline
 
+import io.kotest.assertions.throwables.shouldNotThrowAny
 import io.kotest.core.spec.style.FunSpec
 import io.kotest.matchers.collections.shouldContainExactly
 import io.kotest.matchers.shouldBe
@@ -88,6 +89,39 @@ class LogPipelineTest : FunSpec({
                 "second-after",
                 "first-after",
             )
+        }
+    }
+
+    context("failure isolation") {
+        test("a failing pipe does not reach the code that logged the record") {
+            val pipeline = LogPipeline()
+                .install(visitingPipe("before", FirstPipeKey))
+                .install(TestPipe(StopPipeKey) { _, _ -> error("sink exploded") })
+
+            shouldNotThrowAny {
+                pipeline.handle(record())
+            }
+
+            visited shouldContainExactly listOf("before")
+        }
+
+        test("a later record still flows after one pipe failed") {
+            var failNext = true
+            val pipeline = LogPipeline()
+                .install(TestPipe(FirstPipeKey) { record, next ->
+                    if (failNext) {
+                        failNext = false
+                        error("transient sink failure")
+                    }
+
+                    visited += record.body
+                    next(record)
+                })
+
+            pipeline.handle(record("dropped"))
+            pipeline.handle(record("delivered"))
+
+            visited shouldContainExactly listOf("delivered")
         }
     }
 
