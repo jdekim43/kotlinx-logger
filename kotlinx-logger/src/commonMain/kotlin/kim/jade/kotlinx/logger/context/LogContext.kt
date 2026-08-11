@@ -5,16 +5,20 @@ package kim.jade.kotlinx.logger.context
 interface LogContext : Map<String, Any?> {
 
     operator fun plus(other: Map<String, Any?>?): LogContext = if (other == null) this else {
-        LogContext((this as Map<String, Any?>).plus(other))
+        LogContextMap((this as Map<String, Any?>).plus(other))
     }
 
-    fun clone(): LogContext = LogContext(toMap())
+    fun clone(): LogContext = LogContextCopied(this)
 
-    fun toImmutable(): LogContext = LogContext(toMap())
-
-    fun toMutable(): MutableLogContext = MutableLogContext(toMutableMap())
+    fun toMutable(): MutableLogContext = MutableLogContextCopied(this)
 }
 
-private class LogContextImpl(data: Map<String, Any?>) : LogContext, Map<String, Any?> by data.toMap()
+internal open class LogContextMap(data: Map<String, Any?>) : LogContext, Map<String, Any?> by data
 
-fun LogContext(data: Map<String, Any?> = emptyMap()): LogContext = LogContextImpl(data)
+internal class LogContextCopied(data: Map<String, Any?>) : LogContextMap(data.toMap())
+
+internal class LogContextPairs(data: Array<out Pair<String, Any?>>) : LogContextMap(data.toMap())
+
+fun LogContext(data: Map<String, Any?> = emptyMap()): LogContext = LogContextCopied(data)
+
+fun LogContext(vararg data: Pair<String, Any?>): LogContext = LogContextPairs(data)

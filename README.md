@@ -235,35 +235,42 @@ Context data is stored in `LogRecord.context` as a `Map<String, Any?>`. The defa
 
 ```kotlin
 val immutable = LogContext(
-    mapOf("tenantId" to "tenant-a")
+    "tenantId" to "tenant-a",
+    "region" to "kr",
 )
 
-val mutable = MutableLogContext()
-mutable["requestId"] = "req-100"
+val mutable = MutableLogContext(
+    "requestId" to "req-100",
+)
 mutable.putAll(mapOf("userId" to 7, "role" to "admin"))
 ```
+
+Both factories accept either a `Map<String, Any?>` or key/value `Pair` arguments. Input data is copied, so subsequent changes to the source map do not affect the context.
 
 When keys overlap, the value on the right-hand side of `+` wins.
 
 ```kotlin
-val base = LogContext(mapOf("tenant" to "a", "region" to "kr"))
-val override = LogContext(mapOf("region" to "us"))
+val base = LogContext("tenant" to "a", "region" to "kr")
+val override = LogContext("region" to "us")
 val merged = base + override // region == "us"
 
-val mutableMerged = MutableLogContext(mapOf("a" to 1)) + mapOf("b" to 2)
-mutableMerged += LogContext(mapOf("c" to 3))
+val mutableMerged = MutableLogContext("a" to 1) + mapOf("b" to 2)
+mutableMerged += mapOf("c" to 3)
 ```
 
-| Function                         | Result                                                           |
-|----------------------------------|------------------------------------------------------------------|
-| `LogContext(data)`               | Copies the input into an immutable context.                      |
-| `MutableLogContext(data)`        | Creates a shareable mutable context.                             |
-| `context + map`                  | Merges values into a new context; values on the right win.       |
-| `mutableContext += logContext`   | Adds values directly to the mutable context on the left.         |
-| `clone()`                        | Creates a new context with the same data and mutability.         |
-| `toImmutable()`                  | Creates an immutable copy.                                      |
-| `toMutable()`                    | Creates a mutable copy.                                         |
-| `MutableLogContext.snap()`       | Takes an immutable `LogContext` snapshot of the current values.  |
+| Function                              | Result                                                           |
+|---------------------------------------|------------------------------------------------------------------|
+| `LogContext()`                        | Creates an empty immutable context.                              |
+| `LogContext(map)`                     | Copies a map into an immutable context.                          |
+| `LogContext("key" to value, ...)`    | Creates an immutable context from key/value pairs.               |
+| `MutableLogContext()`                 | Creates an empty shareable mutable context.                      |
+| `MutableLogContext(map)`              | Copies a map into a shareable mutable context.                   |
+| `MutableLogContext("key" to value, ...)` | Creates a shareable mutable context from key/value pairs.    |
+| `context + map`                       | Merges values into a new context; values on the right win.       |
+| `mutableContext += map`               | Adds map values directly to the mutable context on the left.     |
+| `clone()`                             | Creates a new context with the same data and mutability.         |
+| `toMutable()`                         | Creates a mutable copy.                                         |
+| `MutableLogContext.snap()`            | Takes an immutable `LogContext` snapshot of the current values.  |
 
 Other read and write operations behave like their Kotlin `Map` and `MutableMap` counterparts.
 
@@ -682,7 +689,7 @@ val request = Request.Builder()
     .url(url)
     .tag(
         LogContext::class.java,
-        LogContext(mapOf("requestId" to requestId)),
+        LogContext("requestId" to requestId),
     )
     .build()
 ```
