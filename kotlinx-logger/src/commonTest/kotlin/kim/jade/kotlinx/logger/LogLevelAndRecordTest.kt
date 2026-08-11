@@ -12,14 +12,14 @@ import kotlin.time.Instant
 class LogLevelAndRecordTest : FunSpec({
 
     context("LogLevel") {
-        context("a threshold prints its own level and every more severe level") {
+        context("a threshold prints its own level and every more severe level, never NONE") {
             withData(
                 nameFn = { "threshold $it" },
                 LogLevel.entries,
             ) { threshold ->
                 val printable = LogLevel.entries.filter { it.isPrintableAt(threshold) }
 
-                printable shouldContainExactly LogLevel.entries.take(threshold.ordinal + 1)
+                printable shouldContainExactly LogLevel.entries.drop(1).take(threshold.ordinal)
             }
         }
 

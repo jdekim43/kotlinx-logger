@@ -11,6 +11,7 @@ import io.opentelemetry.api.common.AttributeKey
 import io.opentelemetry.api.logs.Severity
 import kim.jade.kotlinx.logger.LogLevel
 import kim.jade.kotlinx.logger.LogRecord
+import kim.jade.kotlinx.logger.Logger
 import kim.jade.kotlinx.logger.context.ThreadLogContext
 import kim.jade.kotlinx.logger.pipeline.LogPipe
 import kim.jade.kotlinx.logger.pipeline.LogPipeline
@@ -126,8 +127,24 @@ class OTelKotlinxLogRecordBuilderTest : FunSpec({
         }
     }
 
+    context("severity text") {
+        test("free-form severity text is mapped without failing the caller") {
+            val builder = { OTelKotlinxLogger("otel.severity.text").logRecordBuilder() }
+
+            assertSoftly {
+                builder().setSeverityText("WARN").build().level shouldBe LogLevel.WARNING
+                builder().setSeverityText("warn").build().level shouldBe LogLevel.WARNING
+                builder().setSeverityText("Warning").build().level shouldBe LogLevel.WARNING
+                builder().setSeverityText("SEVERE").build().level shouldBe LogLevel.ERROR
+                builder().setSeverityText("not a severity").build().level shouldBe LogLevel.INFO
+            }
+        }
+    }
+
     context("provider builder") {
-        test("keeps instrumentation metadata in the thread log context") {
+        test("carries instrumentation metadata on the logger, not on the building thread") {
+            ThreadLogContext.reset()
+
             val logger = OTelKotlinxLoggerProvider()
                 .loggerBuilder("inventory")
                 .setSchemaUrl("https://example.test/schema")
@@ -135,10 +152,33 @@ class OTelKotlinxLogRecordBuilderTest : FunSpec({
                 .build()
 
             logger.scopeName shouldBe "inventory"
-            ThreadLogContext["otel"] shouldBe mapOf(
-                "schemaUrl" to "https://example.test/schema",
-                "scopeVersion" to "2.4.1",
-            )
+            ThreadLogContext.containsKey("otel") shouldBe false
+        }
+
+        test("instrumentation metadata reaches the records that logger emits") {
+            val name = "otel.scope.meta"
+            val capture = OTelCapturingPipe()
+            val kotlinxLogger = Logger.named(name)
+
+            try {
+                kotlinxLogger.level = LogLevel.TRACE
+                kotlinxLogger.pipeline = LogPipeline().install(capture)
+
+                OTelKotlinxLoggerProvider()
+                    .loggerBuilder(name)
+                    .setInstrumentationVersion("2.4.1")
+                    .build()
+                    .logRecordBuilder()
+                    .setBody("emitted")
+                    .emit()
+
+                capture.records.single().meta["otel"] shouldBe mapOf(
+                    "schemaUrl" to null,
+                    "scopeVersion" to "2.4.1",
+                )
+            } finally {
+                kotlinxLogger.resetConfiguration()
+            }
         }
     }
 })

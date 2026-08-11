@@ -31,7 +31,7 @@ open class LoggerNameShortener(
 
     protected fun transform(name: String): String {
         if (useSimpleName) {
-            return name.substringAfterLast('.')
+            return name.substringAfterLast('.').ifEmpty { name }
         }
 
         val result = mutableListOf<String>()

@@ -14,17 +14,7 @@ object OkHttpLogInterceptorFactory {
     ) : HttpLoggingInterceptor.Logger {
 
         override fun log(message: String) {
-            when (logLevel) {
-                LogLevel.FATAL -> logger.fatal(message)
-                LogLevel.ERROR -> logger.error(message)
-                LogLevel.WARNING -> logger.warning(message)
-                LogLevel.INFO -> logger.info(message)
-                LogLevel.DEBUG -> logger.debug(message)
-                LogLevel.TRACE -> logger.trace(message)
-                LogLevel.NONE -> {
-                    //do nothing
-                }
-            }
+            logger.log(logLevel, message)
         }
     }
 

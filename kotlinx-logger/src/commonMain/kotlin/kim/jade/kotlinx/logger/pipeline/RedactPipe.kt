@@ -7,11 +7,16 @@ import kim.jade.kotlinx.logger.LogRecordData
 import kim.jade.kotlinx.logger.context.LogContext
 
 class RedactPipe(
-    var keys: Set<String> = DEFAULT_KEYS,
+    keys: Set<String> = DEFAULT_KEYS,
     var keyPatterns: List<Regex> = DEFAULT_KEY_PATTERNS,
     var placeholder: String = "***",
     var maxDepth: Int = 8,
 ) : LogPipe {
+
+    var keys: Set<String> = keys.normalizeKeys()
+        set(value) {
+            field = value.normalizeKeys()
+        }
 
     companion object Key : LogPipe.Key<RedactPipe> {
 
@@ -70,6 +75,8 @@ class RedactPipe(
             Regex("apikey"),
             Regex("authorization"),
         )
+
+        internal fun Set<String>.normalizeKeys(): Set<String> = mapTo(mutableSetOf()) { it.normalizeKey() }
 
         internal fun String.normalizeKey(): String {
             val alreadyNormalized = all { it.isDigit() || (it.isLetter() && it.isLowerCase()) }

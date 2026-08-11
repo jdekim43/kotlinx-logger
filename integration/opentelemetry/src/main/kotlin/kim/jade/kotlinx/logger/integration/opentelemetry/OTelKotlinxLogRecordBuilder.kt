@@ -6,11 +6,23 @@ import io.opentelemetry.api.logs.Severity
 import io.opentelemetry.context.Context
 import kim.jade.kotlinx.logger.LogLevel
 import kim.jade.kotlinx.logger.LogRecordData
+import kim.jade.kotlinx.logger.context.snapCurrentLogContext
 import java.time.Instant
 import java.util.concurrent.TimeUnit
 import kotlin.time.Clock
 
 class OTelKotlinxLogRecordBuilder(private val logger: OTelKotlinxLogger) : LogRecordBuilder {
+
+    private companion object {
+
+        val SEVERITY_ALIASES: Map<String, Severity> = mapOf(
+            "warning" to Severity.WARN,
+            "severe" to Severity.ERROR,
+            "critical" to Severity.FATAL,
+            "verbose" to Severity.TRACE,
+            "notice" to Severity.INFO,
+        )
+    }
 
     private var timestamp: kotlin.time.Instant? = null
     private var observedTimestamp: kotlin.time.Instant? = null
@@ -64,8 +76,12 @@ class OTelKotlinxLogRecordBuilder(private val logger: OTelKotlinxLogger) : LogRe
         return this
     }
 
-    override fun setSeverityText(severityText: String): OTelKotlinxLogRecordBuilder =
-        setSeverity(Severity.valueOf(severityText))
+    override fun setSeverityText(severityText: String): OTelKotlinxLogRecordBuilder {
+        val named = Severity.entries.firstOrNull { it.name.equals(severityText, ignoreCase = true) }
+        val severity = named ?: SEVERITY_ALIASES[severityText.trim().lowercase()] ?: return this
+
+        return setSeverity(severity)
+    }
 
     override fun setBody(body: String): OTelKotlinxLogRecordBuilder {
         this.body = body
@@ -96,6 +112,7 @@ class OTelKotlinxLogRecordBuilder(private val logger: OTelKotlinxLogger) : LogRe
         level = severity?.toKotlinxLevel() ?: LogLevel.INFO,
         body = body ?: "",
         exception = throwable,
+        context = snapCurrentLogContext() + (logger.scopeMeta?.let { mapOf("otel" to it) } ?: emptyMap()),
         meta = attributes.mapKeys { it.key.key },
         eventName = eventName,
         timestamp = timestamp ?: observedTimestamp ?: Clock.System.now(),

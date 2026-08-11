@@ -1,7 +1,6 @@
 package kim.jade.kotlinx.logger.integration.opentelemetry
 
 import io.opentelemetry.api.logs.LoggerBuilder
-import kim.jade.kotlinx.logger.context.ThreadLogContext
 
 class OtelKotlinxLoggerBuilder(val scopeName: String) : LoggerBuilder {
 
@@ -20,12 +19,5 @@ class OtelKotlinxLoggerBuilder(val scopeName: String) : LoggerBuilder {
         return this
     }
 
-    override fun build(): OTelKotlinxLogger {
-        ThreadLogContext["otel"] = mapOf(
-            "schemaUrl" to schemaUrl,
-            "scopeVersion" to scopeVersion
-        )
-
-        return OTelKotlinxLogger(scopeName)
-    }
+    override fun build(): OTelKotlinxLogger = OTelKotlinxLogger(scopeName, schemaUrl, scopeVersion)
 }

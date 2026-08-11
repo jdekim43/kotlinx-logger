@@ -65,6 +65,16 @@ class KotlinxLoggerAdapterTest : FunSpec({
             }
         }
 
+        test("LocationAwareLogger calls keep records more severe than the threshold") {
+            val adapter = adapter("location-aware-severe", LogLevel.WARNING)
+
+            adapter.log(null, "caller", LocationAwareLogger.ERROR_INT, "database down", null, null)
+            adapter.log(null, "caller", LocationAwareLogger.WARN_INT, "database slow", null, null)
+            adapter.log(null, "caller", LocationAwareLogger.INFO_INT, "database fine", null, null)
+
+            capture.records.map { it.level } shouldBe listOf(LogLevel.ERROR, LogLevel.WARNING)
+        }
+
         test("LocationAwareLogger calls normalize arguments and honor level filtering") {
             val adapter = adapter("location-aware", LogLevel.WARNING)
             val failure = IllegalArgumentException("invalid")

@@ -48,7 +48,7 @@ class KotlinxLoggerAdapter(@Transient private val logger: Logger) : LegacyAbstra
     ) {
         val kotlinxLogLevel = Level.intToLevel(level).toKotlinxLogLevel()
 
-        if (logger.level.isPrintableAt(kotlinxLogLevel)) {
+        if (kotlinxLogLevel.isPrintableAt(logger.level)) {
             val normalizedParameters = NormalizedParameters.normalize(message, argArray, t)
             val formattedMessage =
                 MessageFormatter.basicArrayFormat(normalizedParameters.message, normalizedParameters.arguments)

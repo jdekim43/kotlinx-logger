@@ -2,6 +2,7 @@
 
 package kim.jade.kotlinx.logger.integration.koin
 
+import kim.jade.kotlinx.logger.LogLevel
 import org.koin.core.logger.Level
 import org.koin.core.logger.Logger
 import org.koin.core.logger.MESSAGE
@@ -11,13 +12,11 @@ class KoinLogger(private val logger: KLogger = KLogger.named("KoinApplication"))
 
     override fun display(level: Level, msg: MESSAGE) {
         when (level) {
-            Level.DEBUG -> logger.debug(msg)
-            Level.INFO -> logger.info(msg)
-            Level.WARNING -> logger.warning(msg)
-            Level.ERROR -> logger.error(msg)
-            Level.NONE -> {
-                //do nothing
-            }
+            Level.DEBUG -> logger.log(LogLevel.DEBUG, msg)
+            Level.INFO -> logger.log(LogLevel.INFO, msg)
+            Level.WARNING -> logger.log(LogLevel.WARNING, msg)
+            Level.ERROR -> logger.log(LogLevel.ERROR, msg)
+            Level.NONE -> logger.log(LogLevel.NONE, msg)
         }
     }
 }

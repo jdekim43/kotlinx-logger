@@ -106,6 +106,14 @@ class RedactPipeTest : FunSpec({
     }
 
     context("configuration") {
+        test("a configured key matches however it is written") {
+            val custom = RedactPipe(keys = setOf("X-Tenant-Id"), keyPatterns = emptyList())
+
+            val redacted = custom.redact(record(meta = mapOf("x_tenant_id" to "alpha", "tenantName" to "beta")))
+
+            redacted.meta shouldContainExactly mapOf("x_tenant_id" to "***", "tenantName" to "beta")
+        }
+
         test("the placeholder and key set can be replaced") {
             val custom = RedactPipe(keys = setOf("tenant"), keyPatterns = emptyList(), placeholder = "[hidden]")
 

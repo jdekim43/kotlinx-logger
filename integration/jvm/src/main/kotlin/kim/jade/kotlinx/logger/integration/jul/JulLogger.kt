@@ -60,15 +60,13 @@ class JulLogger : Handler() {
         if (record == null) return
 
         val level = record.level?.logLevel ?: LogLevel.INFO
-        val threadName = Thread.getAllStackTraces().asIterable()
-            .find { it.key.id == record.threadID.toLong() }?.key?.name
 
         val logger = KLogger.named(record.loggerName ?: KLogger.defaultLoggerName)
         logger.log(
             LogRecordData(
-                loggerName = record.loggerName,
+                loggerName = logger.name,
                 level = level,
-                body = record.message,
+                body = record.message.orEmpty(),
                 exception = record.thrown,
                 meta = record.parameters?.withIndex()?.associate { it.index.toString() to it.value } ?: emptyMap(),
                 context = LogContext(
@@ -79,10 +77,17 @@ class JulLogger : Handler() {
                         "sequenceNumber" to record.sequenceNumber,
                     ),
                 ),
-                threadName = threadName,
+                threadName = record.threadName(),
                 timestamp = Instant.fromEpochMilliseconds(record.millis),
             )
         )
+    }
+
+    @Suppress("DEPRECATION")
+    private fun LogRecord.threadName(): String? {
+        val current = Thread.currentThread()
+
+        return if (current.id == threadID.toLong()) current.name else "Thread#$threadID"
     }
 
     override fun flush() {

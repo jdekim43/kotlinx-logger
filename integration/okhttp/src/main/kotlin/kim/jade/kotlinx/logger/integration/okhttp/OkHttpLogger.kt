@@ -48,7 +48,7 @@ class OkHttpLogger(
         val logContext = snapCurrentLogContext() + request.tag(LogContext::class.java)
 
         val requestHeaders = if (option.includeRequestHeaders) request.headers.toMap() else emptyMap()
-        val requestBody = capturedRequestBody(request)
+        val requestBody = captured { capturedRequestBody(request) }
 
         val requestTimestamp = Clock.System.now()
         val requestLog = HttpRequestLog(
@@ -83,7 +83,7 @@ class OkHttpLogger(
 
         val responseTimestamp = Clock.System.now()
         val responseHeaders = if (option.includeResponseHeaders) response.headers.toMap() else emptyMap()
-        val responseBody = capturedResponseBody(response)
+        val responseBody = captured { capturedResponseBody(response) }
 
         val responseLog = HttpResponseLog(
             requestLog,
@@ -96,6 +96,17 @@ class OkHttpLogger(
         logger.log(responseLog.toLogRecord(logger.name, option.successLogLevel, logContext, option.combineLog))
 
         return response
+    }
+
+    private inline fun captured(read: () -> String?): String? = try {
+        read()
+    } catch (e: Exception) {
+        logger.warning {
+            exception = e
+
+            "Failed to capture"
+        }
+        "Unavailable (${e::class.simpleName})"
     }
 
     private fun capturedRequestBody(request: Request): String? {

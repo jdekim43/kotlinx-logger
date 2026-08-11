@@ -72,12 +72,28 @@ class JulLoggerTest : FunSpec({
 
             capture.records shouldHaveSize 0
         }
+
+        test("a record with no message or logger name is translated rather than failing the caller") {
+            JulLogger().publish(JulLogRecord(Level.SEVERE, null).apply { loggerName = "jul.no.message" })
+            JulLogger().publish(JulLogRecord(Level.SEVERE, "no logger name").apply { loggerName = null })
+
+            capture.records shouldHaveSize 2
+            assertSoftly {
+                capture.records[0].run {
+                    loggerName shouldBe "jul.no.message"
+                    body shouldBe ""
+                }
+                capture.records[1].run {
+                    loggerName shouldBe Logger.defaultLoggerName
+                    body shouldBe "no logger name"
+                }
+            }
+        }
     }
 
     context("level mapping") {
         withData(
             nameFn = { (julLevel, expected) -> "JUL $julLevel maps to $expected" },
-            Level.OFF to LogLevel.NONE,
             Level.SEVERE to LogLevel.ERROR,
             Level.INFO to LogLevel.INFO,
             Level.FINE to LogLevel.DEBUG,
@@ -88,6 +104,12 @@ class JulLoggerTest : FunSpec({
             JulLogger().publish(JulLogRecord(julLevel, "message").apply { loggerName = name })
 
             capture.records.single().level shouldBe expectedLevel
+        }
+
+        test("JUL OFF is a threshold rather than a severity, so no record is emitted") {
+            JulLogger().publish(JulLogRecord(Level.OFF, "message").apply { loggerName = "jul.level.OFF" })
+
+            capture.records shouldHaveSize 0
         }
     }
 
