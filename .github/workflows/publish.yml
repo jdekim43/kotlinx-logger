@@ -146,16 +146,9 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: staging-deploy
-          path: |
-            kotlinx-logger/build/staging-deploy
-            integration/gson/build/staging-deploy
-            integration/jackson/build/staging-deploy
-            integration/jvm/build/staging-deploy
-            integration/koin/build/staging-deploy
-            integration/ktor/build/staging-deploy
-            integration/okhttp/build/staging-deploy
-            integration/opentelemetry/build/staging-deploy
-            integration/sentry/build/staging-deploy
+          # Matches the staging repository of every module, so adding a module
+          # needs no change here.
+          path: "*/build/staging-deploy"
           if-no-files-found: error
           retention-days: 1
 
@@ -272,22 +265,22 @@ jobs:
         run: |
           set -euo pipefail
 
-          for module_directory in \
-            kotlinx-logger \
-            integration/gson \
-            integration/jackson \
-            integration/jvm \
-            integration/koin \
-            integration/ktor \
-            integration/okhttp \
-            integration/opentelemetry \
-            integration/sentry
+          shopt -s nullglob
+          staging_directories=(*/build/staging-deploy)
+
+          if (( ${#staging_directories[@]} == 0 )); then
+            echo "The build job produced no staging repository." >&2
+            exit 1
+          fi
+
+          for staging_directory in "${staging_directories[@]}"
           do
-            staging_directory="$module_directory/build/staging-deploy"
-            if [[ -z "$(find "$staging_directory" -name '*.pom' -print -quit 2>/dev/null)" ]]; then
+            pom_count="$(find "$staging_directory" -name '*.pom' | wc -l | tr -d '[:space:]')"
+            if (( pom_count == 0 )); then
               echo "No staged artifacts found in $staging_directory" >&2
               exit 1
             fi
+            echo "$staging_directory: $pom_count POM(s)"
           done
 
       - name: Prepare signing keys
