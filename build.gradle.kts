@@ -1,3 +1,6 @@
+import org.jetbrains.kotlin.gradle.targets.js.nodejs.NodeJsRootExtension
+import org.jetbrains.kotlin.gradle.targets.js.yarn.YarnPlugin
+import org.jetbrains.kotlin.gradle.targets.js.yarn.YarnRootExtension
 import org.jreleaser.model.Active
 import org.jreleaser.model.Signing
 
@@ -26,6 +29,27 @@ val nonJvmArtifactIds = listOf(
 allprojects {
     group = "kim.jade"
     version = releaseVersion
+}
+
+// Overrides for the Kotlin/JS toolchain npm dependencies in kotlin-js-store/yarn.lock.
+// These are build-time only (bundler and test runner) and are not part of any published artifact,
+// but they are still reported by Dependabot. Remove an entry once the Kotlin Gradle plugin
+// ships a version at or above the patched one.
+plugins.withType<YarnPlugin> {
+    // GHSA-38r7-794h-5758 (< 5.104.0) and GHSA-8fgc-7cc6-rx7x (<= 5.104.0): allowedUris
+    // allow-list bypass in the buildHttp HttpUriPlugin.
+    the<NodeJsRootExtension>().versions.webpack.version = "5.104.1"
+
+    // Both of these are transitive dependencies of mocha, and mocha still declares semver ranges
+    // that can never resolve to the patched major (as of mocha 11.8.0, the latest release).
+    // Overriding here is the only way to get the patched versions until mocha widens its ranges.
+    the<YarnRootExtension>().apply {
+        // GHSA-5c6j-r48x-rmvq (<= 7.0.2) and GHSA-qj8w-gfj5-8c6v (< 7.0.5); mocha requests ^6.0.2.
+        resolution("serialize-javascript", "7.0.5")
+
+        // GHSA-73rr-hh4g-fpgx (< 8.0.3); mocha requests ^7.0.0.
+        resolution("diff", "8.0.3")
+    }
 }
 
 jreleaser {
