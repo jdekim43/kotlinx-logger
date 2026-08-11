@@ -12,27 +12,27 @@ import kotlin.time.Instant
 class LogLevelAndRecordTest : FunSpec({
 
     context("LogLevel") {
-        context("a threshold prints its own level and every more severe level, never NONE") {
+        context("a threshold prints its own level and every more severe level") {
             withData(
                 nameFn = { "threshold $it" },
                 LogLevel.entries,
             ) { threshold ->
                 val printable = LogLevel.entries.filter { it.isPrintableAt(threshold) }
 
-                printable shouldContainExactly LogLevel.entries.drop(1).take(threshold.ordinal)
+                printable shouldContainExactly LogLevel.entries.take(threshold.ordinal + 1)
             }
         }
 
         context("log level names use the public wire representation") {
             withData(
                 nameFn = { (level, name) -> "$level is named $name" },
-                LogLevel.NONE to "NONE",
                 LogLevel.FATAL to "FATAL",
                 LogLevel.ERROR to "ERROR",
                 LogLevel.WARNING to "WARN",
                 LogLevel.INFO to "INFO",
                 LogLevel.DEBUG to "DEBUG",
                 LogLevel.TRACE to "TRACE",
+                LogLevel.NONE to "NONE",
             ) { (level, name) ->
                 level.logName shouldBe name
             }

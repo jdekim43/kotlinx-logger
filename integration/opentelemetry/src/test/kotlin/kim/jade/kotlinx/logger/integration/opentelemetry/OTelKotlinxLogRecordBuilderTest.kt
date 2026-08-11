@@ -172,7 +172,7 @@ class OTelKotlinxLogRecordBuilderTest : FunSpec({
                     .setBody("emitted")
                     .emit()
 
-                capture.records.single().meta["otel"] shouldBe mapOf(
+                capture.records.single().context["otel"] shouldBe mapOf(
                     "schemaUrl" to null,
                     "scopeVersion" to "2.4.1",
                 )
