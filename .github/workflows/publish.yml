@@ -147,9 +147,15 @@ jobs:
         with:
           name: staging-deploy
           path: |
-            kotlinx/build/staging-deploy
-            encoding/build/staging-deploy
-            security/build/staging-deploy
+            kotlinx-logger/build/staging-deploy
+            integration/gson/build/staging-deploy
+            integration/jackson/build/staging-deploy
+            integration/jvm/build/staging-deploy
+            integration/koin/build/staging-deploy
+            integration/ktor/build/staging-deploy
+            integration/okhttp/build/staging-deploy
+            integration/opentelemetry/build/staging-deploy
+            integration/sentry/build/staging-deploy
           if-no-files-found: error
           retention-days: 1
 
@@ -266,7 +272,16 @@ jobs:
         run: |
           set -euo pipefail
 
-          for module_directory in kotlinx encoding security
+          for module_directory in \
+            kotlinx-logger \
+            integration/gson \
+            integration/jackson \
+            integration/jvm \
+            integration/koin \
+            integration/ktor \
+            integration/okhttp \
+            integration/opentelemetry \
+            integration/sentry
           do
             staging_directory="$module_directory/build/staging-deploy"
             if [[ -z "$(find "$staging_directory" -name '*.pom' -print -quit 2>/dev/null)" ]]; then
