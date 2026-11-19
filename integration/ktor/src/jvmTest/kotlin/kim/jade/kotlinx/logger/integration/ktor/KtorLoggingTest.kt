@@ -159,6 +159,7 @@ class KtorLoggingTest : FunSpec({
                             withContext(Dispatchers.Default) {
                                 CoroutineLogContext.get()["tenant"] shouldBe null
                                 ThreadLogContext["path"] shouldBe "upstream"
+                                ThreadLogContext["method"] shouldBe HttpMethod.Get
                                 logger.info {
                                     withCoroutine()
                                     "inside route"

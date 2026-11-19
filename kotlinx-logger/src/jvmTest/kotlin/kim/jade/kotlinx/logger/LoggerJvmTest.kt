@@ -122,7 +122,7 @@ class LoggerJvmTest : FunSpec({
 
             try {
                 Executors.newSingleThreadExecutor().asCoroutineDispatcher().use { dispatcher ->
-                    withContext(CoroutineThreadLogContext() + logContext) {
+                    withContext(CoroutineThreadLogContext(includeCoroutineContext = false) + logContext) {
                         ThreadLogContext["scope"] shouldBe null
                         ThreadLogContext["scope"] = "thread"
                         ThreadLogContext["attempt"] = 1
@@ -182,6 +182,57 @@ class LoggerJvmTest : FunSpec({
                 ThreadLogContext["scope"] shouldBe null
                 CoroutineLogContext.get()["scope"] shouldBe "request"
                 snapCurrentLogContext()["scope"] shouldBe null
+            }
+        }
+
+        test("includes current coroutine fields by default across dispatcher switches and child launches") {
+            ThreadLogContext["scope"] = "outside"
+            val request = CoroutineLogContext(mapOf("requestId" to "request-1"))
+
+            Executors.newSingleThreadExecutor().asCoroutineDispatcher().use { dispatcher ->
+                withContext(CoroutineThreadLogContext() + request) {
+                    ThreadLogContext["requestId"] shouldBe "request-1"
+                    request["route"] = "/orders"
+                    ThreadLogContext.toMap() shouldContainExactly mapOf(
+                        "requestId" to "request-1", "route" to "/orders", "scope" to "outside",
+                    )
+
+                    withContext(dispatcher + CoroutineLogContext(mapOf("requestId" to "nested"))) {
+                        async { ThreadLogContext["requestId"] }.await() shouldBe "nested"
+                        ThreadLogContext.containsKey("route") shouldBe false
+                    }
+
+                    ThreadLogContext["route"] shouldBe "/orders"
+                    withContext(CoroutineThreadLogContext(includeCoroutineContext = false)) {
+                        ThreadLogContext.toMap() shouldContainExactly mapOf("scope" to "outside")
+                    }
+                    ThreadLogContext["requestId"] shouldBe "request-1"
+                }
+            }
+
+            ThreadLogContext.toMap() shouldContainExactly mapOf("scope" to "outside")
+        }
+
+        test("keeps writes and removals local to the installed thread context") {
+            val request = CoroutineLogContext(mapOf("requestId" to "request-1", "route" to null))
+
+            withContext(CoroutineThreadLogContext(includeCoroutineContext = true) + request) {
+                ThreadLogContext.containsKey("route") shouldBe true
+                ThreadLogContext.put("requestId", null) shouldBe "request-1"
+                ThreadLogContext["requestId"] shouldBe null
+                ThreadLogContext.putAll(mapOf("requestId" to "override"))
+                ThreadLogContext["requestId"] shouldBe "override"
+                ThreadLogContext.remove("requestId") shouldBe "override"
+                ThreadLogContext.containsKey("requestId") shouldBe false
+
+                withContext(Dispatchers.Default) {
+                    ThreadLogContext.toMap() shouldContainExactly mapOf("route" to null)
+                    ThreadLogContext.clear()
+                }
+
+                ThreadLogContext.isEmpty() shouldBe true
+                async { ThreadLogContext.isEmpty() }.await() shouldBe true
+                request.toMap() shouldContainExactly mapOf("requestId" to "request-1", "route" to null)
             }
         }
 

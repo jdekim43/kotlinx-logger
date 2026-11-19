@@ -486,6 +486,23 @@ withContext(
 Child coroutines that inherit the same `CoroutineLogContext` share its fields. `withThreadLogContext` scopes temporary
 thread fields to its block.
 
+On the JVM, `CoroutineThreadLogContext()` also exposes the current coroutine's fields through `ThreadLogContext`.
+This makes them available to the SLF4J provider and to `MDC.get()` for string fields.
+
+```kotlin
+withContext(
+    CoroutineLogContext(mapOf("requestId" to requestId)) +
+        CoroutineThreadLogContext()
+) {
+    slf4jLogger.info("request started")
+}
+```
+
+Thread values take precedence for duplicate keys in `ThreadLogContext`.
+Writes, removals, and clears through `ThreadLogContext` or MDC affect the propagated thread state for that scope.
+The `CoroutineLogContext` retains its fields. Use `CoroutineThreadLogContext(includeCoroutineContext = false)`
+to propagate thread fields alone.
+
 <details>
 <summary><b>Coroutine context reference</b></summary>
 

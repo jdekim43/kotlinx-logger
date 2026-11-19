@@ -8,9 +8,13 @@ import io.kotest.matchers.shouldNotBe
 import kim.jade.kotlinx.logger.LogLevel
 import kim.jade.kotlinx.logger.LogRecord
 import kim.jade.kotlinx.logger.Logger
+import kim.jade.kotlinx.logger.context.CoroutineLogContext
+import kim.jade.kotlinx.logger.context.CoroutineThreadLogContext
 import kim.jade.kotlinx.logger.pipeline.LogPipe
 import kim.jade.kotlinx.logger.pipeline.LogPipeline
+import kotlinx.coroutines.withContext
 import org.slf4j.LoggerFactory
+import org.slf4j.MDC
 import org.slf4j.spi.LocationAwareLogger
 
 private class Enablement(
@@ -92,6 +96,27 @@ class KotlinxLoggerAdapterTest : FunSpec({
     }
 
     context("factory and facade") {
+        test("SLF4J sees coroutine fields exposed through the thread context") {
+            val name = "slf4j.facade.coroutine"
+            val logger = Logger.named(name)
+            val coroutine = CoroutineLogContext(mapOf("requestId" to "request-1"))
+
+            try {
+                logger.pipeline = LogPipeline().install(capture)
+                withContext(CoroutineThreadLogContext() + coroutine) {
+                    MDC.get("requestId") shouldBe "request-1"
+                    LoggerFactory.getLogger(name).info("request started")
+                    MDC.remove("requestId")
+                    MDC.get("requestId") shouldBe null
+                    coroutine["requestId"] shouldBe "request-1"
+                }
+
+                capture.records.single().context["requestId"] shouldBe "request-1"
+            } finally {
+                logger.resetConfiguration()
+            }
+        }
+
         test("logger factory caches adapters by name") {
             val factory = KotlinxLoggerFactory()
 
