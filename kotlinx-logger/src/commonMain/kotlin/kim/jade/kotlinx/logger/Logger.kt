@@ -148,6 +148,42 @@ open class Logger(
         var meta: LogMeta = emptyMap()
         var context: LogContext = snapCurrentLogContext()
 
+        fun exception(exception: Throwable) {
+            this.exception = exception
+        }
+
+        fun eventName(eventName: String) {
+            this.eventName = eventName
+        }
+
+        fun meta(key: String, value: Any?) {
+            meta += (key to value)
+        }
+
+        fun meta(vararg pairs: Pair<String, Any?>) {
+            meta += pairs
+        }
+
+        fun meta(map: Map<String, Any?>) {
+            meta += map
+        }
+
+        fun context(key: String, value: Any?) {
+            context += LogContext(key to value)
+        }
+
+        fun context(vararg pairs: Pair<String, Any?>) {
+            context += LogContext(*pairs)
+        }
+
+        fun context(map: Map<String, Any?>) {
+            context += LogContext(map)
+        }
+
+        fun context(context: LogContext) {
+            this.context += context
+        }
+
         suspend fun withCoroutine() {
             context += CoroutineLogContext.get()
         }

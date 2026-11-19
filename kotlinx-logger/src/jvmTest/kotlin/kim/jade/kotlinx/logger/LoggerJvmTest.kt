@@ -4,14 +4,20 @@ import io.kotest.core.spec.style.FunSpec
 import io.kotest.matchers.maps.shouldContainExactly
 import io.kotest.matchers.shouldBe
 import io.kotest.matchers.types.shouldBeSameInstanceAs
+import kim.jade.kotlinx.logger.context.CoroutineLogContext
 import kim.jade.kotlinx.logger.context.CoroutineThreadLogContext
+import kim.jade.kotlinx.logger.context.GlobalLogContext
 import kim.jade.kotlinx.logger.context.MutableLogContext
 import kim.jade.kotlinx.logger.context.ThreadLogContext
+import kim.jade.kotlinx.logger.context.snapCurrentLogContext
+import kim.jade.kotlinx.logger.context.withThreadLogContext
+import kotlinx.coroutines.asCoroutineDispatcher
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.async
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.withContext
+import java.util.concurrent.Executors
 
 private class JavaTypedLoggerFixture
 
@@ -104,6 +110,79 @@ class LoggerJvmTest : FunSpec({
             }
 
             requireNotNull(ThreadLogContext.copyAllInStack(STACK_KEY)) shouldBe listOf("outside")
+        }
+
+        test("propagates thread fields independently across dispatcher switches") {
+            ThreadLogContext.reset()
+            val logContext = CoroutineLogContext(mapOf("scope" to "request", "status" to "pending"))
+            val global = GlobalLogContext.toMap()
+            GlobalLogContext["scope"] = "global"
+            GlobalLogContext["attempt"] = 0
+            GlobalLogContext["globalOnly"] = true
+
+            try {
+                Executors.newSingleThreadExecutor().asCoroutineDispatcher().use { dispatcher ->
+                    withContext(CoroutineThreadLogContext() + logContext) {
+                        ThreadLogContext["scope"] shouldBe null
+                        ThreadLogContext["scope"] = "thread"
+                        ThreadLogContext["attempt"] = 1
+
+                        withContext(dispatcher) {
+                            CoroutineLogContext.get()["attempt"] shouldBe null
+                            CoroutineLogContext.get()["status"] = "done"
+                            ThreadLogContext["status"] shouldBe null
+                            val snapshot = snapCurrentLogContext()
+                            snapshot["scope"] shouldBe "thread"
+                            snapshot["attempt"] shouldBe 1
+                            snapshot["status"] shouldBe null
+                            snapshot["globalOnly"] shouldBe true
+                        }
+                    }
+                }
+
+                snapCurrentLogContext()["status"] shouldBe null
+                ThreadLogContext.isEmpty() shouldBe true
+            } finally {
+                GlobalLogContext.clear()
+                GlobalLogContext.putAll(global)
+            }
+        }
+
+        test("preserves the thread snapshot across a nested coroutine context") {
+            ThreadLogContext["scope"] = "thread"
+            val outer = CoroutineLogContext(mapOf("scope" to "outer"))
+            val inner = CoroutineLogContext(mapOf("scope" to "inner"))
+
+            withContext(CoroutineThreadLogContext() + outer) {
+                withContext(inner) {
+                    snapCurrentLogContext()["scope"] shouldBe "thread"
+                    CoroutineLogContext.get()["scope"] shouldBe "inner"
+                    CoroutineLogContext.get()["innerOnly"] = true
+                }
+
+                snapCurrentLogContext()["scope"] shouldBe "thread"
+                CoroutineLogContext.get()["innerOnly"] shouldBe null
+                CoroutineLogContext.get()["outerOnly"] = true
+            }
+
+            outer["outerOnly"] shouldBe true
+            inner["innerOnly"] shouldBe true
+        }
+
+        test("keeps coroutine fields when thread fields are temporarily replaced or cleared") {
+            val logContext = CoroutineLogContext(mapOf("scope" to "request"))
+
+            withContext(CoroutineThreadLogContext() + logContext) {
+                withThreadLogContext("scope" to "temporary") {
+                    ThreadLogContext["scope"] shouldBe "temporary"
+                    snapCurrentLogContext()["scope"] shouldBe "temporary"
+                }
+
+                ThreadLogContext.clear()
+                ThreadLogContext["scope"] shouldBe null
+                CoroutineLogContext.get()["scope"] shouldBe "request"
+                snapCurrentLogContext()["scope"] shouldBe null
+            }
         }
 
         test("isolates stack mutations between child coroutines") {

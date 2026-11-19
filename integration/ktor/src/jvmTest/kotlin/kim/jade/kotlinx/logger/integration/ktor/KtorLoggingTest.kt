@@ -16,7 +16,9 @@ import io.ktor.http.ContentType
 import io.ktor.http.HttpMethod
 import io.ktor.http.HttpStatusCode
 import io.ktor.http.HttpHeaders
+import io.ktor.server.application.ApplicationCallPipeline
 import io.ktor.server.application.install
+import io.ktor.server.plugins.callid.CallId
 import io.ktor.server.request.path
 import io.ktor.server.response.respondText
 import io.ktor.server.routing.get
@@ -26,8 +28,14 @@ import io.ktor.server.testing.testApplication
 import kim.jade.kotlinx.logger.LogLevel
 import kim.jade.kotlinx.logger.LogRecord
 import kim.jade.kotlinx.logger.Logger
+import kim.jade.kotlinx.logger.context.CoroutineLogContext
+import kim.jade.kotlinx.logger.context.CoroutineThreadLogContext
+import kim.jade.kotlinx.logger.context.MutableLogContext
+import kim.jade.kotlinx.logger.context.ThreadLogContext
 import kim.jade.kotlinx.logger.pipeline.LogPipe
 import kim.jade.kotlinx.logger.pipeline.LogPipeline
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 
 class KtorLoggingTest : FunSpec({
 
@@ -136,9 +144,46 @@ class KtorLoggingTest : FunSpec({
     }
 
     context("LogContext plugin") {
-        test("exposes request and custom values to logs inside a route") {
+        test("preserves upstream thread fields when attaching request fields") {
             testApplication {
                 application {
+                    intercept(ApplicationCallPipeline.Setup) {
+                        val fields = MutableLogContext("tenant" to "checkout", "path" to "upstream")
+                        withContext(CoroutineThreadLogContext(fields)) {
+                            proceed()
+                        }
+                    }
+                    install(LogContext)
+                    routing {
+                        get("/context/upstream") {
+                            withContext(Dispatchers.Default) {
+                                CoroutineLogContext.get()["tenant"] shouldBe null
+                                ThreadLogContext["path"] shouldBe "upstream"
+                                logger.info {
+                                    withCoroutine()
+                                    "inside route"
+                                }
+                            }
+                            call.respondText("ok")
+                        }
+                    }
+                }
+
+                client.get("/context/upstream").status shouldBe HttpStatusCode.OK
+            }
+
+            assertSoftly(capture.records.single().context) {
+                this["tenant"] shouldBe "checkout"
+                this["path"] shouldBe "/context/upstream"
+            }
+        }
+
+        test("includes request and custom fields when requested after a dispatcher switch") {
+            testApplication {
+                application {
+                    install(CallId) {
+                        retrieveFromHeader("X-Request-Id")
+                    }
                     install(LogContext) {
                         setupContext = { context ->
                             context["custom"] = "value"
@@ -146,20 +191,27 @@ class KtorLoggingTest : FunSpec({
                     }
                     routing {
                         get("/context/{id}") {
-                            logger.info {
-                                withCoroutine()
-                                "inside route"
+                            withContext(Dispatchers.Default) {
+                                logger.info("default log")
+                                logger.info {
+                                    withCoroutine()
+                                    "request log"
+                                }
                             }
                             call.respondText("ok")
                         }
                     }
                 }
 
-                client.get("/context/7").status shouldBe HttpStatusCode.OK
+                client.get("/context/7") {
+                    header("X-Request-Id", "request-7")
+                }.status shouldBe HttpStatusCode.OK
             }
 
-            capture.records shouldHaveSize 1
-            assertSoftly(capture.records.single().context) {
+            capture.records shouldHaveSize 2
+            capture.records.first().context.containsKey("callId") shouldBe false
+            assertSoftly(capture.records.last().context) {
+                this["callId"] shouldBe "request-7"
                 this["method"] shouldBe HttpMethod.Get
                 this["path"] shouldBe "/context/7"
                 this shouldContain ("custom" to "value")

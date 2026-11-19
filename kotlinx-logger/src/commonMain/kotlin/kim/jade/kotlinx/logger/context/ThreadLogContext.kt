@@ -91,9 +91,11 @@ object ThreadLogContext : MutableLogContext {
         fun clone(): Data = Data(data?.clone(), stack?.deepCopy())
     }
 
-    fun captureData(): Data = Data(
-        data = threadLocalData.get()?.clone(),
-        stack = threadLocalStack.get()?.deepCopy(),
+    fun captureData(): Data = captureState().clone()
+
+    internal fun captureState(): Data = Data(
+        data = threadLocalData.get(),
+        stack = threadLocalStack.get(),
     )
 
     fun restoreData(data: Data) {
@@ -126,27 +128,21 @@ object ThreadLogContext : MutableLogContext {
     fun MutableContextStack.deepCopy(): MutableContextStack = mapValues { it.value.toMutableList() }.toMutableMap()
 }
 
-fun <R> withThreadLogContext(data: Map<String, Any?>, block: () -> R): R {
-    val restored = ThreadLogContext.captureData()
-
-    try {
-        ThreadLogContext.putAll(data)
-
-        return block()
-    } finally {
-        ThreadLogContext.restoreData(restored)
-    }
+fun <R> withThreadLogContext(data: Map<String, Any?>, block: () -> R): R = ThreadLogContext.use {
+    ThreadLogContext.putAll(data)
+    block()
 }
 
 fun <R> withThreadLogContext(vararg data: Pair<String, Any?>, block: () -> R): R =
     withThreadLogContext(data.toMap(), block)
 
 fun <R> ThreadLogContext.use(block: () -> R): R {
-    val restored = captureData()
+    val previous = captureState()
 
     try {
+        restoreData(previous.clone())
         return block()
     } finally {
-        restoreData(restored)
+        restoreData(previous)
     }
 }

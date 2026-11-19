@@ -427,13 +427,13 @@ withThreadLogContext("requestId" to requestId) { //will be cleared after out thi
 `withThreadLogContext` restores whatever was bound to the thread before the block, including writes made inside it, so
 nothing survives into the next task that borrows the same thread.
 
-`snapCurrentLogContext()` returns an immutable snapshot of `GlobalLogContext + ThreadLogContext`. Thread-local values
-win when keys overlap.
+`snapCurrentLogContext()` combines global and thread fields on every target. Thread fields take precedence for
+matching keys.
 
 ```kotlin
 val snapshot = snapCurrentLogContext()
 
-// Intentionally exclude the automatic global and thread-local contexts.
+// Use an empty context for this record.
 logger.info("health check", context = EmptyLogContext)
 ```
 
@@ -467,19 +467,24 @@ suspend fun runJob(jobId: String) {
 }
 ```
 
-On the JVM, combine both context elements when `ThreadLogContext` must also follow coroutine thread switches.
+On the JVM, install `CoroutineThreadLogContext` to carry thread fields across coroutine thread switches.
+`withCoroutine()` adds coroutine fields to the record after its global and thread fields.
 
 ```kotlin
 withContext(
     CoroutineThreadLogContext() +
-            CoroutineLogContext(mapOf("jobId" to jobId))
+        CoroutineLogContext(mapOf("jobId" to jobId))
 ) {
+    ThreadLogContext["attempt"] = 1
     logger.info {
         withCoroutine()
         "running on a coroutine"
     }
 }
 ```
+
+Child coroutines that inherit the same `CoroutineLogContext` share its fields. `withThreadLogContext` scopes temporary
+thread fields to its block.
 
 <details>
 <summary><b>Coroutine context reference</b></summary>
@@ -803,12 +808,13 @@ install(KtorLogContext) {
 ```
 
 The plugin adds the call ID, HTTP method, path, and route to `CoroutineLogContext` and runs request handling in that
-coroutine context. The default `setupContext` also adds `remoteAddress` and `userAgent`; the current `remoteAddress`
-value comes from `request.host()`.
+coroutine context. On every target, call `withCoroutine()` in the logging DSL to include request fields in application
+logs. The default `setupContext` adds `remoteAddress` from `request.host()` and adds `userAgent`.
 
-Headers are copied only when named in `includedHeaders`, matched case-insensitively. The context is attached to *every*
-record a call produces, and request headers routinely carry `Authorization`, `Cookie`, or `X-API-Key`, so copying all of
-them would write those credentials to each sink and to every service the pipeline forwards to. `RedactPipe` still
+Headers are copied only when named in `includedHeaders`, matched case-insensitively. Every record that includes the
+request context also includes the selected headers. Request headers routinely carry `Authorization`, `Cookie`, or
+`X-API-Key`, so copying all of them would write those credentials to each sink and to every service the pipeline
+forwards to. `RedactPipe` still
 redacts a credential-looking header if one is named here, but it cannot recognize headers that are merely sensitive.
 
 > [!NOTE]

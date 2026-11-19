@@ -25,7 +25,7 @@ class CoroutineThreadLogContext(
     constructor(stack: ThreadLogContext.MutableContextStack?) : this(null, stack)
 
     override fun updateThreadContext(context: CoroutineContext): ThreadLogContext.Data {
-        val oldState = ThreadLogContext.captureData()
+        val oldState = ThreadLogContext.captureState()
 
         ThreadLogContext.restoreData(data)
 
