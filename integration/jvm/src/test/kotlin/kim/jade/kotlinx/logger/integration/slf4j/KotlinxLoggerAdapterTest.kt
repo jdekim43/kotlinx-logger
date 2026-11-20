@@ -10,12 +10,17 @@ import kim.jade.kotlinx.logger.LogRecord
 import kim.jade.kotlinx.logger.Logger
 import kim.jade.kotlinx.logger.context.CoroutineLogContext
 import kim.jade.kotlinx.logger.context.CoroutineThreadLogContext
+import kim.jade.kotlinx.logger.context.LogContext
+import kim.jade.kotlinx.logger.context.asCoroutineLogContext
+import kim.jade.kotlinx.logger.context.withLogContext
 import kim.jade.kotlinx.logger.pipeline.LogPipe
 import kim.jade.kotlinx.logger.pipeline.LogPipeline
+import kotlinx.coroutines.asCoroutineDispatcher
 import kotlinx.coroutines.withContext
 import org.slf4j.LoggerFactory
 import org.slf4j.MDC
 import org.slf4j.spi.LocationAwareLogger
+import java.util.concurrent.Executors
 
 private class Enablement(
     val slf4jLevel: String,
@@ -96,6 +101,57 @@ class KotlinxLoggerAdapterTest : FunSpec({
     }
 
     context("factory and facade") {
+        test("withLogContext preserves MDC writes across dispatcher switches and restores the outer scope") {
+            val outer = CoroutineLogContext(mapOf("requestId" to "outer", "tenant" to "alpha"))
+
+            withLogContext(outer) {
+                MDC.get("requestId") shouldBe "outer"
+                MDC.put("operation", "outer")
+
+                val operation = withLogContext("requestId" to "inner") {
+                    MDC.get("requestId") shouldBe "inner"
+                    MDC.put("operation", "inner")
+                    MDC.remove("requestId")
+
+                    Executors.newSingleThreadExecutor().asCoroutineDispatcher().use { dispatcher ->
+                        withContext(dispatcher) {
+                            MDC.get("requestId") shouldBe null
+                            MDC.get("tenant") shouldBe "alpha"
+                            MDC.get("operation")
+                        }
+                    }
+                }
+
+                operation shouldBe "inner"
+                MDC.get("operation") shouldBe "outer"
+                MDC.get("requestId") shouldBe "outer"
+            }
+        }
+
+        test("withLogContext preserves the parent's MDC projection setting") {
+            withContext(CoroutineThreadLogContext(includeCoroutineContext = false)) {
+                val context = CoroutineLogContext(mapOf("requestId" to "request"))
+
+                withLogContext(context) {
+                    CoroutineLogContext.get()["requestId"] shouldBe "request"
+                    MDC.get("requestId") shouldBe null
+                }
+            }
+        }
+
+        test("asCoroutineContext creates an isolated scope for MDC writes") {
+            withLogContext("requestId" to "outer") {
+                val inner = LogContext("requestId" to "inner")
+
+                withContext(inner.asCoroutineLogContext()) {
+                    MDC.get("requestId") shouldBe "inner"
+                    MDC.put("requestId", "updated")
+                }
+
+                MDC.get("requestId") shouldBe "outer"
+            }
+        }
+
         test("SLF4J sees coroutine fields exposed through the thread context") {
             val name = "slf4j.facade.coroutine"
             val logger = Logger.named(name)

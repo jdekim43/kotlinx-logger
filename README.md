@@ -446,18 +446,19 @@ logger.info("health check", context = EmptyLogContext)
 
 ### Coroutine contexts
 
-Install `CoroutineLogContext` with `withContext` and call `withCoroutine()` in the logging DSL to merge the current
-coroutine values into the record.
+Install `CoroutineLogContext` with `withLogContext` and call `withCoroutine()` in the logging DSL to merge the current
+coroutine values into the record. On JVM and Android, `withLogContext` scopes thread log context writes to its block and
+carries them across coroutine thread switches. This includes writes through the SLF4J MDC bridge when installed.
 
 ```kotlin
-import kotlinx.coroutines.withContext
+import kim.jade.kotlinx.logger.context.withLogContext
 
 suspend fun runJob(jobId: String) {
     val coroutineLogContext = CoroutineLogContext(
         mapOf("jobId" to jobId)
     )
 
-    withContext(coroutineLogContext) {
+    withLogContext(coroutineLogContext) {
         logger.info {
             withCoroutine()
 
@@ -467,7 +468,26 @@ suspend fun runJob(jobId: String) {
 }
 ```
 
-On the JVM, install `CoroutineThreadLogContext` to carry thread fields across coroutine thread switches.
+`withLogContext` also accepts a `LogContext`, a map, or key-value pairs such as `"jobId" to jobId`.
+By default, nested calls inherit the parent coroutine's log fields. New values take precedence for matching keys.
+Pass `merge = false` to replace the coroutine log fields for the block.
+
+```kotlin
+withLogContext("requestId" to requestId) {
+    withLogContext("jobId" to jobId) {
+        // The context contains requestId and jobId.
+    }
+    withLogContext("jobId" to jobId, merge = false) {
+        // The coroutine log context contains only jobId.
+    }
+}
+```
+
+Use `savedLogContext.asCoroutineLogContext()` to pass the log elements to `withContext`, `launch`, or `async`.
+When launching from a non-suspending function or a different scope, pass that scope's context explicitly with
+`scope.launch(savedLogContext.asCoroutineLogContext(scope.coroutineContext)) { ... }`.
+
+On JVM and Android, install `CoroutineThreadLogContext` to carry thread fields across coroutine thread switches.
 `withCoroutine()` adds coroutine fields to the record after its global and thread fields.
 
 ```kotlin
@@ -486,7 +506,7 @@ withContext(
 Child coroutines that inherit the same `CoroutineLogContext` share its fields. `withThreadLogContext` scopes temporary
 thread fields to its block.
 
-On the JVM, `CoroutineThreadLogContext()` also exposes the current coroutine's fields through `ThreadLogContext`.
+On JVM and Android, `CoroutineThreadLogContext()` also exposes the current coroutine's fields through `ThreadLogContext`.
 This makes them available to the SLF4J provider and to `MDC.get()` for string fields.
 
 ```kotlin
@@ -514,7 +534,7 @@ to propagate thread fields alone.
 | `CoroutineLogContext.get()`        | Returns the element installed in the current coroutine, or a new uninstalled empty element.       |
 | `CoroutineLogContext.get(context)` | Finds the element in the supplied `CoroutineContext`.                                             |
 | `LogProperties.withCoroutine()`    | Merges the coroutine context after the record context; coroutine values win.                      |
-| `CoroutineThreadLogContext()`      | On the JVM, propagates `ThreadLogContext` across coroutine thread switches and restores it later. |
+| `CoroutineThreadLogContext()`      | On JVM and Android, propagates `ThreadLogContext` across coroutine thread switches and restores it later. |
 
 </details>
 

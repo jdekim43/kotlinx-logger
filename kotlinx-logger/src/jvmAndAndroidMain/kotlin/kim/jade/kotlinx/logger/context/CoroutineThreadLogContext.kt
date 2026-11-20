@@ -5,6 +5,7 @@ package kim.jade.kotlinx.logger.context
 import kotlinx.coroutines.CopyableThreadContextElement
 import kotlinx.coroutines.DelicateCoroutinesApi
 import kotlinx.coroutines.ExperimentalCoroutinesApi
+import java.util.Collections
 import java.util.concurrent.ConcurrentHashMap
 import kotlin.coroutines.AbstractCoroutineContextElement
 import kotlin.coroutines.CoroutineContext
@@ -27,7 +28,7 @@ class CoroutineThreadLogContext private constructor(
     @JvmOverloads
     constructor(includeCoroutineContext: Boolean, data: ThreadLogContext.Data = captureThreadData()) : this(
         data,
-        if (includeCoroutineContext) ConcurrentHashMap.newKeySet<String>() else null,
+        if (includeCoroutineContext) newHiddenCoroutineKeys() else null,
     )
 
     constructor(context: MutableLogContext?, stack: ThreadLogContext.MutableContextStack?) : this(
@@ -60,12 +61,14 @@ class CoroutineThreadLogContext private constructor(
 
     override fun copyForChild(): CoroutineThreadLogContext = CoroutineThreadLogContext(
         threadData.clone(),
-        hiddenCoroutineKeys?.let { ConcurrentHashMap.newKeySet<String>().apply { addAll(it) } },
+        hiddenCoroutineKeys?.let { newHiddenCoroutineKeys().apply { addAll(it) } },
     )
 
     override fun mergeForChild(overwritingElement: CoroutineContext.Element): CoroutineContext =
         (overwritingElement as? CoroutineThreadLogContext)?.copyForChild() ?: overwritingElement
 }
+
+private fun newHiddenCoroutineKeys(): MutableSet<String> = Collections.newSetFromMap(ConcurrentHashMap())
 
 private fun captureThreadData(): ThreadLogContext.Data {
     val current = ThreadLogContext.captureState()

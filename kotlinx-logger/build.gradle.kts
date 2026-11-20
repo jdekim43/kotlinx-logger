@@ -4,6 +4,8 @@ plugins {
 }
 
 kotlin {
+    applyDefaultHierarchyTemplate()
+
     sourceSets {
 //        all {
 //            languageSettings.optIn("kotlin.RequiresOptIn")
@@ -16,6 +18,12 @@ kotlin {
 
             implementation(kt.kotlinx.coroutine)
         }
+
+        val jvmAndAndroidMain = create("jvmAndAndroidMain") {
+            dependsOn(commonMain.get())
+        }
+        jvmMain.get().dependsOn(jvmAndAndroidMain)
+        named("androidMain") { dependsOn(jvmAndAndroidMain) }
 
         nativeMain.dependencies {
             api(kt.kotlinx.coroutine)

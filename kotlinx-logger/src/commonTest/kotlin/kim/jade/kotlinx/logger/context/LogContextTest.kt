@@ -8,6 +8,8 @@ import io.kotest.matchers.nulls.shouldBeNull
 import io.kotest.matchers.shouldBe
 import io.kotest.matchers.types.shouldBeSameInstanceAs
 import io.kotest.matchers.types.shouldNotBeSameInstanceAs
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.withContext
 
 class LogContextTest : FunSpec({
@@ -158,6 +160,62 @@ class LogContextTest : FunSpec({
     }
 
     context("CoroutineLogContext") {
+        test("withLogContext accepts LogContext, map, and pair inputs") {
+            val logContext: LogContext = LogContext("source" to "log context")
+
+            withLogContext(logContext) { currentCoroutineLogContext()["source"] } shouldBe "log context"
+            withLogContext(mapOf("source" to "map")) { currentCoroutineLogContext()["source"] } shouldBe "map"
+            withLogContext("source" to "pair", "count" to 2) {
+                currentCoroutineLogContext().toMap()
+            } shouldBe mapOf("source" to "pair", "count" to 2)
+        }
+
+        test("withLogContext merges coroutine fields in an isolated nested scope by default") {
+            val parent = CoroutineLogContext(mapOf("requestId" to "request-1", "attempt" to 1))
+            val child = CoroutineLogContext(mapOf("jobId" to "job-1", "attempt" to null))
+
+            withLogContext(parent) {
+                withLogContext(child) {
+                    val merged = currentCoroutineLogContext()
+
+                    merged.toMap() shouldBe mapOf("requestId" to "request-1", "jobId" to "job-1", "attempt" to null)
+                    merged["jobId"] = "updated"
+                }
+
+                currentCoroutineLogContext().toMap() shouldBe mapOf("requestId" to "request-1", "attempt" to 1)
+            }
+
+            child.toMap() shouldBe mapOf("jobId" to "job-1", "attempt" to null)
+        }
+
+        test("withLogContext replaces coroutine fields for every input form when merge is false") {
+            val childFields = mapOf("jobId" to "job-1")
+
+            withLogContext("requestId" to "request-1") {
+                withLogContext(CoroutineLogContext(childFields), merge = false) {
+                    currentCoroutineLogContext().toMap()
+                } shouldBe childFields
+                withLogContext(childFields, merge = false) {
+                    currentCoroutineLogContext().toMap()
+                } shouldBe childFields
+                withLogContext("jobId" to "job-1", merge = false) {
+                    currentCoroutineLogContext().toMap()
+                } shouldBe childFields
+
+                currentCoroutineLogContext().toMap() shouldBe mapOf("requestId" to "request-1")
+            }
+        }
+
+        test("asCoroutineContext adds log elements without carrying the parent job") {
+            val installed = CoroutineLogContext(mapOf("requestId" to "request"))
+            val logContext: LogContext = installed
+
+            val context = logContext.asCoroutineLogContext(currentCoroutineContext())
+
+            context[Job] shouldBe null
+            context[CoroutineLogContext] shouldBeSameInstanceAs installed
+        }
+
         test("contexts are retrieved from an explicit or current coroutine context") {
             val installed = CoroutineLogContext(mapOf("jobId" to "job-9"))
 
