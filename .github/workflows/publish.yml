@@ -146,9 +146,10 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: staging-deploy
-          # Matches the staging repository of every module, so adding a module
-          # needs no change here.
-          path: "*/build/staging-deploy"
+          # Matches the staging repository of every module at any depth
+          # (kotlinx-logger/, integration/<name>/), so adding a module needs no
+          # change here.
+          path: "**/build/staging-deploy"
           if-no-files-found: error
           retention-days: 1
 
@@ -265,8 +266,9 @@ jobs:
         run: |
           set -euo pipefail
 
-          shopt -s nullglob
-          staging_directories=(*/build/staging-deploy)
+          # globstar lets ** reach nested modules such as integration/<name>.
+          shopt -s nullglob globstar
+          staging_directories=(**/build/staging-deploy)
 
           if (( ${#staging_directories[@]} == 0 )); then
             echo "The build job produced no staging repository." >&2
